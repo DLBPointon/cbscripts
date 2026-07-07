@@ -1,0 +1,21 @@
+[project]
+name = "cbscripts"
+version = "0.1.0"
+description = "Comic Book Scripts"
+readme = "README.md"
+authors = [
+    { name = "DLBPointon", email = "damonlbp@hotmail.co.uk" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "imagehash>=4.3.2",
+    "rarfile>=4.2",
+    "typer>=0.26.7",
+]
+
+[project.scripts]
+cbscripts = "cbscripts.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.9.17,<0.10.0"]
+build-backend = "uv_build"
