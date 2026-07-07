@@ -1,5 +1,9 @@
 # CBscripts
 
+> ### AI statement
+>
+> Some AI has been used in this project, mainly as an aid to help reformat ideas from earlier itterations or get around a couple of mind blocks. By no means is this a vibe code project, this is a project I am using to learn new tools and methods, can't learn if i'm vibing it all.
+
 Comic Book Scripts is my personal comic book management system.
 
 The idea is that CBscripts `scan` reads all your commic and stores the data in a sqlite db.
