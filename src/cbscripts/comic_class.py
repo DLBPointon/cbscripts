@@ -2,9 +2,11 @@ import json
 import os
 import io
 import sys
+import xml
 import xml.etree.ElementTree as ET
 import zipfile
 import rarfile
+import pikepdf
 
 import logging
 from itertools import count
@@ -12,10 +14,7 @@ from itertools import count
 from PIL import Image
 import imagehash
 
-from cbscripts.utils import publisher_mapping
 from cbscripts.xml_dataclass import XML_data
-
-from numpy import log
 
 logger = logging.getLogger(__name__)
 
@@ -32,17 +31,17 @@ class ComicBook:
         logger.info(f"Processing: {self.current_file_path}")
 
         if self.file_extension == ".cbz":
-            xml_data, page_list = self.read_xml_data_cbz()
             opener = zipfile.ZipFile
+            xml_data, page_list = self.read_xml_data(opener)
         elif self.file_extension == ".cbr":
-            xml_data, page_list = self.read_xml_data_cbr()
             opener = rarfile.RarFile
+            xml_data, page_list = self.read_xml_data(opener)
         elif self.file_extension == ".pdf":
-            xml_data, page_list = self.read_xml_data_pdf()
             opener = None
+            xml_data, page_list = self.read_pdf_metadata()
         else:
-            xml_data, page_list = {}, []
             opener = None
+            xml_data, page_list = {}, []
 
         xml_pages = xml_data.get("pages", [])
         # Pop pages before unpacking - already handled above
@@ -54,8 +53,6 @@ class ComicBook:
             self.pages, self.scanner = self.check_for_scanner_page(xml_pages, page_list, opener)
         else:
             self.pages, self.scanner = xml_pages, "NA"
-
-
 
         self.collection = self.__iter__()
 
@@ -77,28 +74,51 @@ class ComicBook:
         return txt.getvalue()
 
 
-    def read_xml_data_cbz(self):
+    def read_xml_data(self, opener):
         try:
-            xml_data, page_list = self.extract_file_cbz()
+            xml_data, page_list = self.extract_archive(opener)
             return self.get_data_from_xml(xml_data) if xml_data else {}, page_list
         except Exception as ex:
             logger.error(f"Failed to read XML data: {ex}")
             return {}, []
 
 
-    def read_xml_data_cbr(self):
+    def read_pdf_metadata(self):
         try:
-            xml_data, page_list = self.extract_file_cbr()
-            return self.get_data_from_xml(xml_data) if xml_data else {}, page_list
+            xml_data, page_list = self.extract_pdf()
+            return xml_data if xml_data else {}, page_list
         except Exception as ex:
-            logger.error(f"Failed to read XML data: {ex}")
+            logger.error(f"Failed to read PDF metadata: {ex}")
             return {}, []
 
 
-    def extract_pages(self, file_list):
+    def extract_pdf(self):
+        try:
+            with pikepdf.open(self.current_file_path) as pdf:
+                meta = pdf.open_metadata()
+
+                # PDF distributed stuff just doesn't have any metadata built in!
+                # So, lets check for some common fields and use those if possible
+                # If not exists then we will have to None everything and figure it out later.
+                xml_data = {
+                    "series":  str(meta.get("dc:title")) if meta.get("dc:title") else None,
+                    "writer":  str(meta.get("dc:creator")) if meta.get("dc:creator") else None,
+                    "summary": str(meta.get("dc:description")) if meta.get("dc:description") else None,
+                    "genre":   str(meta.get("dc:subject")) if meta.get("dc:subject") else None,
+                }
+
+                page_list = [f"page_{i}.jpg" for i in range(len(pdf.pages))] # Not the real page names, they don't have them!
+
+                return xml_data, page_list
+        except Exception as ex:
+            logger.error(f"Failed to extract PDF: {ex}")
+            return {}, []
+
+
+    def extract_pages(self, file_list) -> list:
         return sorted([ i for i in file_list if i.endswith(".jpg") or i.endswith(".png") ])
 
-    def _extract_archive(self, opener):
+    def extract_archive(self, opener):
         """Shared extraction logic for CBZ and CBR files."""
         try:
             with opener(self.current_file_path) as rf:
@@ -114,12 +134,6 @@ class ComicBook:
             logger.error(f"Exception w/ file: {self.current_file_path}\nError: {ex}")
             sys.exit(1)
         return data, pages
-
-    def extract_file_cbz(self):
-        return self._extract_archive(zipfile.ZipFile)
-
-    def extract_file_cbr(self):
-        return self._extract_archive(rarfile.RarFile)
 
     def _extract_pages(self, pages_element):
         """Extract page data from Pages element and detect double pages."""
@@ -233,7 +247,7 @@ class ComicBook:
             for x, y in scanner_dict.items():
                 if x == page.get("ImageHash"):
                     xml_dict[idx]["Type"] = "Deleted"
-                    logger.info(f"Scanner page detected: {self.xml_data.series} #{self.xml_data.issue} - Page {page['Image']} ({page['FilePath']}) == {y['scanner']} | Page Type is now: {page['Type']}")
+                    logger.info(f"Scanner page detected: {self.xml_data.series} #{self.xml_data.issue} - Page {page['Image']} ({page['FilePath']}) == {y['scanner']} | Page Type is now labelled: {page['Type']}")
                     return xml_dict, y["scanner"]
 
         return xml_dict, "NA"
