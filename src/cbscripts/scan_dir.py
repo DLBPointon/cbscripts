@@ -41,3 +41,6 @@ def main(
         if sql_connection:
             sql_connection.close()
             logger.info('SQLite Connection closed')
+
+    logger.info(f"Scanned directory: {directory}")
+    logger.info(f"Found {counter} comic files")
