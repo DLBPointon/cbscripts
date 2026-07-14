@@ -4,30 +4,30 @@ from dataclasses import dataclass, field
 @dataclass
 class XML_data:
     # Simple string fields - match keys from TAG_MAPPING in get_data_from_xml
-    series:                 str = None
-    issue:                  str = None
-    volume:                 str = None
-    publisher:              str = None
-    imprint:                str = None
-    year:                   str = None
-    month:                  str = None
-    day:                    str = None
-    age_rating:             str = None
-    page_count:             str = None
-    web:                    str = None
-    language_iso:           str = None
-    main_character_or_team: str = None
-    review:                 str = None
-    community_rating:       str = None
-    scan_information:       str = None
-    manga:                  str = None
-    black_and_white:        str = None
-    format:                 str = None
-    series_group:           str = None
-    summary:                str = None
-    notes:                  str = None
-    story_arc:              str = None
-    teams:                  str = None
+    series:                 str = "NA"
+    issue:                  str = "NA"
+    volume:                 str = "NA"
+    publisher:              str = "NA"
+    imprint:                str = "NA"
+    year:                   str = "NA"
+    month:                  str = "NA"
+    day:                    str = "NA"
+    age_rating:             str = "NA"
+    page_count:             str = "NA"
+    web:                    str = "NA"
+    language_iso:           str = "NA"
+    main_character_or_team: str = "NA"
+    review:                 str = "NA"
+    community_rating:       str = "NA"
+    scan_information:       str = "NA"
+    manga:                  str = "NA"
+    black_and_white:        str = "NA"
+    format:                 str = "NA"
+    series_group:           str = "NA"
+    summary:                str = "NA"
+    notes:                  str = "NA"
+    story_arc:              str = "NA"
+    teams:                  str = "NA"
 
     # M2M fields - received as comma-separated strings, split in __post_init__
     writer:       list = field(default_factory=list)
@@ -45,7 +45,7 @@ class XML_data:
     pages: list = field(default_factory=list)
 
     def __post_init__(self):
-        # Normalise string fields - convert "N" placeholder to None
+        # Normalise string fields - convert "N" placeholder to "NA"
         for f in [
             "series", "issue", "volume", "publisher", "imprint", "year", "month",
             "day", "age_rating", "page_count", "web", "language_iso",
@@ -54,7 +54,7 @@ class XML_data:
             "story_arc", "teams",
         ]:
             if getattr(self, f) in ("N", "UNKNOWN", ""):
-                setattr(self, f, None)
+                setattr(self, f, "NA")
 
         # Split comma-separated string fields into clean lists for Many 2 Many relationships in DB
         # e.g. "writer1, writer2" -> ["writer1", "writer2"]
@@ -66,5 +66,5 @@ class XML_data:
                     v.strip() for v in value.split(",")
                     if v.strip() and v.strip() not in ("N", "UNKNOWN")
                 ])
-            elif value is None:
+            elif value == "NA":
                 setattr(self, f, [])
