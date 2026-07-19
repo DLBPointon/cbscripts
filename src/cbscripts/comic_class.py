@@ -81,7 +81,18 @@ class ComicBook:
         if rename_format == "N":
             return str(self.current_file_path), str(self.current_file_path)
 
-        return ""
+        valid_rename_options = {
+            "publisher": self.xml_data.publisher,
+            "series": self.xml_data.series,
+            "issue": str(self.id),
+            "format": self.file_extension,
+            "year": self.xml_data.year,
+            "volume": self.xml_data.volume
+        }
+
+        new_file_path = rename_format.format(**valid_rename_options)
+
+        return new_file_path.split("/")[-1], new_file_path
 
 
     def read_xml_data(self, opener):
