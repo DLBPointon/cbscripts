@@ -1,7 +1,7 @@
 from pathlib import Path
 from cbscripts.utils import get_comic_files
 
-def main(input_path, subdirectory_search=False):
+def main(context, input_path, dry_run=False, subdirectory_search=False, output_directory=None):
     """
     Main function for the SORT subcommand.
 

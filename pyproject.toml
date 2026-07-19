@@ -10,9 +10,15 @@ requires-python = ">=3.14"
 dependencies = [
     "imagehash>=4.3.2",
     "pikepdf>=10.10.0",
+    "py-spy>=0.4.2",
+    "pyyaml>=6.0.3",
     "rarfile>=4.2",
+    "snakeviz>=2.2.2",
     "typer>=0.26.7",
 ]
+
+[tool.ruff]
+line-length = 100
 
 [project.scripts]
 cbscripts = "cbscripts.cli:app"

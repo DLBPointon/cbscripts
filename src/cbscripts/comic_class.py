@@ -1,8 +1,9 @@
 import json
 import os
 import io
+from pathlib import Path
 import sys
-import xml
+import sqlite3
 import xml.etree.ElementTree as ET
 import zipfile
 import rarfile
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 class ComicBook:
     _ids = count(0)
-    def __init__(self, file_path, hash_pages=False):
+    def __init__(self, file_path: Path, rename_format: str, hash_pages=False):
         self.id = next(self._ids)
 
         self.current_file_path = file_path.absolute()
@@ -54,6 +55,8 @@ class ComicBook:
         else:
             self.pages, self.scanner = xml_pages, "NA"
 
+        self.proposed_file_name, self.proposed_file_path = self.get_new_name(rename_format)
+
         self.collection = self.__iter__()
 
 
@@ -74,6 +77,13 @@ class ComicBook:
         return txt.getvalue()
 
 
+    def get_new_name(self, rename_format: str) -> tuple[str, str]:
+        if rename_format == "N":
+            return str(self.current_file_path), str(self.current_file_path)
+
+        return ""
+
+
     def read_xml_data(self, opener):
         try:
             xml_data, page_list = self.extract_archive(opener)
@@ -92,7 +102,7 @@ class ComicBook:
             return {}, []
 
 
-    def extract_pdf(self):
+    def extract_pdf(self) -> tuple[dict, list]:
         try:
             with pikepdf.open(self.current_file_path) as pdf:
                 meta = pdf.open_metadata()
@@ -135,7 +145,7 @@ class ComicBook:
             sys.exit(1)
         return data, pages
 
-    def _extract_pages(self, pages_element):
+    def _extract_pages(self, pages_element) -> list[dict]:
         """Extract page data from Pages element and detect double pages."""
         pages = [dict(page.attrib) for page in pages_element]
 
@@ -217,13 +227,13 @@ class ComicBook:
         """Convert publisher name to underscore format."""
         return "_".join(text.split(" ")) if text else "N"
 
-    def _parse_float(self, value):
+    def _parse_float(self, value: int | float | str) -> float | str | None:
         """
         Safely converts a value to float.
         Returns None if the value is invalid or "UNKNOWN".
         """
         if value == "UNKNOWN" or value is None:
-            return None
+            return "N"
         try:
             if isinstance(value, (int, float)):
                 return float(value)
@@ -276,23 +286,20 @@ class ComicBook:
         return self._tag_scanner_page(xml_dict)
 
 
-    def _to_none(self, value):
+    def _to_none(self, value: str | None) -> str | None:
         """Returns None if value is UNKNOWN or empty, otherwise returns the value."""
         if value in ("UNKNOWN", "N", "", None):
             return None
         return value
 
-    def _to_int(self, value):
+    def _to_int(self, value: str) -> int | None:
         """Safely converts a string to int, returns None if not possible."""
-        if value in ("UNKNOWN", "N", "", None):
-            return None
-
         try:
             return int(value)
         except (ValueError, TypeError):
             return None
 
-    def send_to_sqlite(self, conn):
+    def send_to_sqlite(self, conn: sqlite3.Connection) -> None:
         """
         Inserts comic book data into SQLite database.
         Handles series, publisher, issue, pages, and M2M relationships.
@@ -416,7 +423,7 @@ class ComicBook:
         finally:
             cursor.close()
 
-    def _insert_m2m_data(self, cursor, issue_id, items, table_name, junction_table, fk_column):
+    def _insert_m2m_data(self, cursor: sqlite3.Cursor, issue_id: int | None, items: list[str], table_name: str, junction_table: str, fk_column: str) -> None:
         """
         Inserts many-to-many relationships for a list of items.
         Skips UNKNOWN, empty, and whitespace-only values.

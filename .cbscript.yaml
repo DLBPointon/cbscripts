@@ -1,0 +1,3 @@
+database_file: "/home/dlbpointon/Documents/cbscripts/cbscripts.db"
+log_level: "INFO"
+rename_format: "{publisher[0]}/{publisher}/{series}/{year}/{series} #{issue} V{volume} ({year})"

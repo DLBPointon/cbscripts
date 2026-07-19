@@ -24,3 +24,8 @@ In the future, other commands in the package would:
 Far Future goals
 - comicvine api access to identify missing issues in series
 - comicvine api access to identify new issues in series
+
+
+## Notes
+ComicInfo Schema - https://github.com/anansi-project/comicinfo/blob/main/schema/v2.0/ComicInfo.xsd
+ComicInfo Page Info - https://github.com/anansi-project/comicinfo/issues/54
