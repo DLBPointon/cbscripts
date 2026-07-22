@@ -28,13 +28,13 @@ def main(
 
         logger.info(f"Updating database: {update_database}")
         if update_database:
+            # its a .database_file here because its a object it self
             sql_connection = open_sqlite_connection(context.obj.database_file)
             initialize_database(sql_connection)
 
         for comic in comic_files:
             comicbook = ComicBook(comic, hash_pages=hash_pages, rename_format=context.obj.rename_format)
             comicbook.send_to_sqlite(sql_connection) if update_database else None  # type: ignore
-            print(comicbook)
 
     except sqlite3.Error as e:
         logger.error(f"Error connecting to database: {e}")

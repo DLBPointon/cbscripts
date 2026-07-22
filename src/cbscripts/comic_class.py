@@ -6,6 +6,7 @@ import sys
 import sqlite3
 import xml.etree.ElementTree as ET
 import zipfile
+from pikepdf.models import image
 import rarfile
 import pikepdf
 
@@ -51,9 +52,9 @@ class ComicBook:
 
         # Needs to happen after xml_data is unpacked for nicer log print out
         if hash_pages and opener:
-            self.pages, self.scanner = self.check_for_scanner_page(xml_pages, page_list, opener)
+            self.pages, self.scanner, self.diff_hash = self.check_for_scanner_page(xml_pages, page_list, opener)
         else:
-            self.pages, self.scanner = xml_pages, "NA"
+            self.pages, self.scanner, self.diff_hash = xml_pages, "NA", imagehash.ImageHash("")
 
         self.proposed_file_name, self.proposed_file_path = self.get_new_name(rename_format)
 
@@ -175,6 +176,7 @@ class ComicBook:
             if 'Type' not in page or page['Type'] == '':
                 if page_width != 0 and page_width >= double_page_width * 0.9:  # 90% threshold for tolerance
                     page['Type'] = 'DoublePage'
+                    logger.info(f"Double page detected: {page['Image']} | Width: {page_width} | Single Page Width: {single_page_width} | Page Type is now labelled: '{page['Type']}'")
 
         return pages
 
@@ -256,7 +258,7 @@ class ComicBook:
             pass
         return None
 
-    def _tag_scanner_page(self, xml_dict: list) -> tuple:
+    def _tag_scanner_page(self, xml_dict: list) -> tuple[list, str, int]:
         """
         Tags the scanner page in the XML dictionary if one is detected.
         """
@@ -266,14 +268,15 @@ class ComicBook:
         for idx, page in enumerate(xml_dict):
             logger.debug(page)
             for x, y in scanner_dict.items():
-                if x == page.get("ImageHash"):
+                diff = imagehash.hex_to_hash(page.get("ImageHash")) - imagehash.hex_to_hash(x)
+                if diff <= 10: # 0 == exact match, 1-10 == close match
                     xml_dict[idx]["Type"] = "Deleted"
-                    logger.info(f"Scanner page detected: {self.xml_data.series} #{self.xml_data.issue} - Page {page['Image']} ({page['FilePath']}) == {y['scanner']} | Page Type is now labelled: {page['Type']}")
-                    return xml_dict, y["scanner"]
+                    logger.info(f"Scanner page detected: {self.xml_data.series} #{self.xml_data.issue} - Page {page['Image']} ({page['FilePath']}) == {y['scanner']} | Similarity == {abs(diff - 100)}% | Page Type is now labelled: `{page['Type']}`")
+                    return xml_dict, y["scanner"], diff
 
-        return xml_dict, "NA"
+        return xml_dict, "NA", 0
 
-    def check_for_scanner_page(self, xml_dict: list, file_list: list, opener) -> tuple[list, str]:
+    def check_for_scanner_page(self, xml_dict: list, file_list: list, opener) -> tuple[list, str, int]:
         """
         Checks for scanner pages in the XML data and file list,
         marking them as deleted if found. So we arn't removing scanner information,
@@ -282,15 +285,16 @@ class ComicBook:
         Scanner information is moved to the XML.
         """
         if not isinstance(xml_dict, list) or not xml_dict:
-            return [], "NA"
+            return [], "NA", 0
 
+        diff = 0
         try:
             with opener(self.current_file_path) as z:
                 for file_path, page_data in zip(file_list, xml_dict):
                     page_data["FilePath"] = file_path
                     file_hash = imagehash.average_hash(Image.open(z.open(file_path)))
                     page_data["ImageHash"] = str(file_hash)
-                    logger.debug(f"Computed hash for page {page_data['Image']}: {file_hash}")
+                    logger.debug(f"Computed hash for page {page_data['Image']}: Hash={file_hash}, Similarity Score={diff}")
         except Exception as e:
             logger.error(f"Error computing image hashes: {e}")
 
