@@ -82,7 +82,8 @@ def scan(
     update_database: bool = True,
     database_file: str = "cbscripts.db",
     hash_pages: bool = True,
-    log_level: str = "INFO"
+    log_level: str = "INFO",
+    scanner_db: str = "assets/scanner_hash.json",
 ):
     """
     Scan a given directory of comic books (in CBZ format) and insert them into a SQLite database.

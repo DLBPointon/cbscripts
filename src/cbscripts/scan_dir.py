@@ -1,4 +1,5 @@
 
+from numpy._core.multiarray import scalar
 import typer
 import logging
 import sqlite3
@@ -17,7 +18,8 @@ def main(
     output_directory: str = "cb_sorted/",
     update_database: bool = True,
     database_file: str = "cbscripts.db",
-    hash_pages: bool = True
+    hash_pages: bool = True,
+    scanner_db: Path = Path("assets/scanner_hash.json"),
 ):
     logger.info(f"Scanning directory: {directory}")
     comic_files, counter = get_comic_files(Path(directory), scan_subs)

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class ComicBook:
     _ids = count(0)
-    def __init__(self, file_path: Path, rename_format: str, hash_pages=False):
+    def __init__(self, file_path: Path, rename_format: str, scanner_db: Path, hash_pages=False):
         self.id = next(self._ids)
 
         self.current_file_path = file_path.absolute()
@@ -52,7 +52,7 @@ class ComicBook:
 
         # Needs to happen after xml_data is unpacked for nicer log print out
         if hash_pages and opener:
-            self.pages, self.scanner, self.diff_hash = self.check_for_scanner_page(xml_pages, page_list, opener)
+            self.pages, self.scanner, self.diff_hash = self.check_for_scanner_page(xml_pages, page_list, opener, scanner_db)
         else:
             self.pages, self.scanner, self.diff_hash = xml_pages, "NA", imagehash.ImageHash("")
 
@@ -138,10 +138,15 @@ class ComicBook:
 
 
     def extract_pages(self, file_list) -> list:
+        """
+        Extracts image file paths from the archive.
+        """
         return sorted([ i for i in file_list if i.endswith(".jpg") or i.endswith(".png") ])
 
     def extract_archive(self, opener):
-        """Shared extraction logic for CBZ and CBR files."""
+        """
+        Shared extraction logic for CBZ and CBR files.
+        """
         try:
             with opener(self.current_file_path) as rf:
                 file_list = rf.namelist()
@@ -258,12 +263,11 @@ class ComicBook:
             pass
         return None
 
-    def _tag_scanner_page(self, xml_dict: list) -> tuple[list, str, int]:
+    def _tag_scanner_page(self, xml_dict: list, scanner_db: Path) -> tuple[list, str, int]:
         """
         Tags the scanner page in the XML dictionary if one is detected.
         """
-
-        scanner_dict = json.load(open("/home/dlbpointon/Documents/cbscripts/src/cbscripts/assets/scanner_hash.json"))
+        scanner_dict = json.load(open(scanner_db))
 
         for idx, page in enumerate(xml_dict):
             logger.debug(page)
@@ -276,7 +280,7 @@ class ComicBook:
 
         return xml_dict, "NA", 0
 
-    def check_for_scanner_page(self, xml_dict: list, file_list: list, opener) -> tuple[list, str, int]:
+    def check_for_scanner_page(self, xml_dict: list, file_list: list, opener, scanner_db: Path) -> tuple[list, str, int]:
         """
         Checks for scanner pages in the XML data and file list,
         marking them as deleted if found. So we arn't removing scanner information,
@@ -298,7 +302,7 @@ class ComicBook:
         except Exception as e:
             logger.error(f"Error computing image hashes: {e}")
 
-        return self._tag_scanner_page(xml_dict)
+        return self._tag_scanner_page(xml_dict, scanner_db)
 
 
     def _to_none(self, value: str | None) -> str | None:
