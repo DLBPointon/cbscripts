@@ -1,64 +1,75 @@
-import json
-import os
 import io
-from pathlib import Path
-import sys
+import logging
+import os
 import sqlite3
+import threading
+import time
 import xml.etree.ElementTree as ET
 import zipfile
-from pikepdf.models import image
-import rarfile
-import pikepdf
-
-import logging
+from concurrent.futures import ThreadPoolExecutor
 from itertools import count
+from pathlib import Path
 
-from PIL import Image
 import imagehash
+import pikepdf
+import rarfile
+from PIL import Image
 
+from cbscripts.exceptions import ExtractionError
+from cbscripts.utils import _load_scanner_dict, publisher_mapping
 from cbscripts.xml_dataclass import XML_data
 
 logger = logging.getLogger(__name__)
 
+
+def _hash_page(args: tuple[str, bytes]) -> tuple[str, str]:
+    """Hash one page's raw bytes. Runs inside a ThreadPoolExecutor."""
+    page_path, data = args
+    thread = threading.current_thread().name
+    logger.debug(f"[{thread}] Starting hash: {page_path}")
+    result = str(imagehash.average_hash(Image.open(io.BytesIO(data))))
+    logger.debug(f"[{thread}] Done:          {page_path}")
+    return page_path, result
+
+
 class ComicBook:
     _ids = count(0)
-    def __init__(self, file_path: Path, rename_format: str, scanner_db: Path, hash_pages=False):
+    def __init__(self, file_path: Path, rename_format: str, scanner_db: Path, hash_pages=False, delimiter: str | None = None, publisher_mapping_file: Path | None = None, hash_threads: int = 2):
         self.id = next(self._ids)
+        self.publisher_mapping_file = publisher_mapping_file
+        self.hash_threads = max(2, min(hash_threads, 12))
 
         self.current_file_path = file_path.absolute()
         self.current_file_name = file_path.name
         self.file_extension = file_path.suffix
+        self.delimiter = delimiter
         self.file_size = os.path.getsize(file_path) / 1024
 
         logger.info(f"Processing: {self.current_file_path}")
+        t_start = time.perf_counter()
 
-        if self.file_extension == ".cbz":
-            opener = zipfile.ZipFile
-            xml_data, page_list = self.read_xml_data(opener)
-        elif self.file_extension == ".cbr":
-            opener = rarfile.RarFile
-            xml_data, page_list = self.read_xml_data(opener)
+        if self.file_extension in (".cbz", ".cbr"):
+            opener = zipfile.ZipFile if self.file_extension == ".cbz" else rarfile.RarFile
+            xml_bytes, page_list, image_hashes = self._process_archive(opener, hash_pages)
+            xml_data = self.get_data_from_xml(xml_bytes) if xml_bytes else {}
         elif self.file_extension == ".pdf":
-            opener = None
             xml_data, page_list = self.read_pdf_metadata()
+            image_hashes = {}
         else:
-            opener = None
-            xml_data, page_list = {}, []
+            xml_data, page_list, image_hashes = {}, [], {}
 
         xml_pages = xml_data.get("pages", [])
-        # Pop pages before unpacking - already handled above
         xml_data.pop("pages", None)
         self.xml_data = XML_data(**xml_data)
 
-        # Needs to happen after xml_data is unpacked for nicer log print out
-        if hash_pages and opener:
-            self.pages, self.scanner, self.diff_hash = self.check_for_scanner_page(xml_pages, page_list, opener, scanner_db)
+        if hash_pages and image_hashes:
+            self.pages, self.scanner, self.diff_hash = self.check_for_scanner_page(xml_pages, page_list, image_hashes, scanner_db)
         else:
-            self.pages, self.scanner, self.diff_hash = xml_pages, "NA", imagehash.ImageHash("")
+            self.pages, self.scanner, self.diff_hash = xml_pages, "NA", None
 
-        self.proposed_file_name, self.proposed_file_path = self.get_new_name(rename_format)
+        self.proposed_file_name, self.proposed_file_path = self.get_new_name(rename_format, delimiter=self.delimiter)
 
-        self.collection = self.__iter__()
+        self.processing_time = time.perf_counter() - t_start
 
 
     def __iter__(self):
@@ -67,52 +78,98 @@ class ComicBook:
     def __str__(self):
         txt = io.StringIO()
         txt.write(f"Series: {self.xml_data.series} - Issue: {self.id} -- {self.__class__.__name__}:\n")
-        [
-            txt.write(f"\t- {a}: {b} \n")
-            for a, b in self.collection
-            if a not in ["block", "collection", "contents","code_data", "pages"]
-        ]
+        for a, b in self.__dict__.items():
+            if a not in {"block", "collection", "contents", "code_data", "pages"}:
+                txt.write(f"\t- {a}: {b} \n")
         for item in self.pages:
             txt.write(f"\t- {item} \n")
         txt.write(")")
         return txt.getvalue()
 
 
-    def get_new_name(self, rename_format: str) -> tuple[str, str]:
+    def report(self) -> str:
+        txt = io.StringIO()
+        txt.write(f"{self.__class__.__name__}: {self.id} - Series: {self.xml_data.series}\n")
+        txt.write(f"\t- Issue: {self.xml_data.issue} -- Publisher: {self.xml_data.publisher}\n")
+        txt.write(f"\t- pages: {len(self.pages)} \n")
+        for a, b in self.__dict__.items():
+            if a in {"scanner", "diff_hash", "current_file_name", "current_file_path", "proposed_file_name", "proposed_file_path"}:
+                txt.write(f"\t- {a}: {b} \n")
+        txt.write(f"\t- processed in: {self.processing_time:.3f}s\n")
+        return txt.getvalue()
+
+
+    def get_new_name(self, rename_format: str, delimiter: str | None) -> tuple[str, str]:
         if rename_format == "N":
             return str(self.current_file_path), str(self.current_file_path)
 
         valid_rename_options = {
             "publisher": self.xml_data.publisher,
             "series": self.xml_data.series,
-            "issue": str(self.id),
+            "issue": self.xml_data.issue,
             "format": self.file_extension,
             "year": self.xml_data.year,
             "volume": self.xml_data.volume
         }
 
         new_file_path = rename_format.format(**valid_rename_options)
+        new_file_name = new_file_path.split("/")[-1] + self.file_extension
+        new_file_path_full = new_file_path + self.file_extension
 
-        return new_file_path.split("/")[-1], new_file_path
+        if delimiter == None:
+            return new_file_name, new_file_path_full
+        else:
+            return delimiter.join(new_file_name.split(" ")), delimiter.join(new_file_path_full.split(" "))
 
+    def _process_archive(self, opener, hash_pages: bool) -> tuple[bytes | None, list, dict]:
+        """
+        Opens the archive exactly once.
+        Returns: (xml_bytes, sorted_page_list, image_hash_map)
 
-    def read_xml_data(self, opener):
+        If hash_pages is True, pages are hashed in parallel batches of
+        self.hash_threads (1-8, set in config). Each batch reads bytes
+        sequentially (zipfile is not thread-safe) then hashes in a
+        ThreadPoolExecutor, keeping peak memory to batch_size pages.
+        """
         try:
-            xml_data, page_list = self.extract_archive(opener)
-            return self.get_data_from_xml(xml_data) if xml_data else {}, page_list
+            with opener(self.current_file_path) as archive:
+                file_list = archive.namelist()
+                logger.debug(file_list)
+                xml_bytes = archive.read("ComicInfo.xml") if "ComicInfo.xml" in file_list else None
+                if xml_bytes:
+                    logger.debug(f"Reading ComicInfo.xml from {self.current_file_path}")
+                else:
+                    logger.debug(f"No ComicInfo.xml found in {self.current_file_path}")
+                pages = self.extract_pages(file_list)
+
+                image_hashes: dict[str, str] = {}
+                if hash_pages:
+                    total_batches = -(-len(pages) // self.hash_threads)  # ceiling division
+                    for i in range(0, len(pages), self.hash_threads):
+                        batch = pages[i:i + self.hash_threads]
+                        batch_num = i // self.hash_threads + 1
+                        logger.debug(f"Batch {batch_num}/{total_batches}: reading {len(batch)} pages")
+                        # Read bytes sequentially — zipfile is not thread-safe
+                        batch_bytes = {p: archive.read(p) for p in batch}
+                        logger.debug(f"Batch {batch_num}/{total_batches}: submitting to {self.hash_threads} threads")
+                        # Hash in parallel — PIL/numpy release the GIL
+                        t0 = time.perf_counter()
+                        with ThreadPoolExecutor(max_workers=self.hash_threads) as pool:
+                            image_hashes.update(pool.map(_hash_page, batch_bytes.items()))
+                        elapsed = time.perf_counter() - t0
+                        logger.debug(f"Batch {batch_num}/{total_batches}: {len(batch)} pages hashed in {elapsed:.3f}s ({elapsed / len(batch):.3f}s/page avg)")
+
         except Exception as ex:
-            logger.error(f"Failed to read XML data: {ex}")
-            return {}, []
+            logger.error(f"Exception w/ file: {self.current_file_path}\nError: {ex}")
+            raise RuntimeError(f"Could not open archive: {self.current_file_path}") from ex
+
+        return xml_bytes, pages, image_hashes
 
 
     def read_pdf_metadata(self):
-        try:
-            xml_data, page_list = self.extract_pdf()
-            return xml_data if xml_data else {}, page_list
-        except Exception as ex:
-            logger.error(f"Failed to read PDF metadata: {ex}")
-            return {}, []
-
+        "Wrapper around extract_pdf, originally contained extra exception handling"
+        xml_data, page_list = self.extract_pdf()
+        return xml_data if xml_data else {}, page_list
 
     def extract_pdf(self) -> tuple[dict, list]:
         try:
@@ -133,34 +190,18 @@ class ComicBook:
 
                 return xml_data, page_list
         except Exception as ex:
-            logger.error(f"Failed to extract PDF: {ex}")
-            return {}, []
+            raise ExtractionError(
+                        f"Failed to extract PDF: {self.current_file_path}"
+                    ) from ex
 
 
     def extract_pages(self, file_list) -> list:
         """
         Extracts image file paths from the archive.
         """
-        return sorted([ i for i in file_list if i.endswith(".jpg") or i.endswith(".png") ])
+        return sorted([ i for i in file_list if i.endswith((".jpg", ".png")) ])
 
-    def extract_archive(self, opener):
-        """
-        Shared extraction logic for CBZ and CBR files.
-        """
-        try:
-            with opener(self.current_file_path) as rf:
-                file_list = rf.namelist()
-                logger.debug(file_list)
-                data = rf.read("ComicInfo.xml") if "ComicInfo.xml" in file_list else None
-                if data:
-                    logger.debug(f"Reading ComicInfo.xml from {self.current_file_path}")
-                else:
-                    logger.debug(f"No ComicInfo.xml found in {self.current_file_path}")
-                pages = self.extract_pages(file_list)
-        except Exception as ex:
-            logger.error(f"Exception w/ file: {self.current_file_path}\nError: {ex}")
-            sys.exit(1)
-        return data, pages
+
 
     def _extract_pages(self, pages_element) -> list[dict]:
         """Extract page data from Pages element and detect double pages."""
@@ -178,10 +219,9 @@ class ComicBook:
         for page in pages:
             page_width = int(page.get('ImageWidth', 0))
             # If no Type or Type is not already set, check for double page
-            if 'Type' not in page or page['Type'] == '':
-                if page_width != 0 and page_width >= double_page_width * 0.9:  # 90% threshold for tolerance
-                    page['Type'] = 'DoublePage'
-                    logger.info(f"Double page detected: {page['Image']} | Width: {page_width} | Single Page Width: {single_page_width} | Page Type is now labelled: '{page['Type']}'")
+            if ('Type' not in page or page['Type'] == '') and (page_width != 0 and page_width >= double_page_width * 0.9):  # 90% threshold for tolerance
+                page['Type'] = 'DoublePage'
+                logger.info(f"Double page detected: {page['Image']} | Width: {page_width} | Single Page Width: {single_page_width} | Page Type is now labelled: '{page['Type']}'")
 
         return pages
 
@@ -195,7 +235,7 @@ class ComicBook:
         TAG_MAPPING = {
             "AgeRating": ("age_rating", str),
             "Series": ("series", str),
-            "Publisher": ("publisher", self._process_publisher),
+            "Publisher": ("publisher", lambda text: publisher_mapping(text, self.publisher_mapping_file)),
             "Volume": ("volume", str),
             "Year": ("year", str),
             "Month": ("month", str),
@@ -241,11 +281,7 @@ class ComicBook:
 
         return result
 
-    def _process_publisher(self, text: str) -> str:
-        """Convert publisher name to underscore format."""
-        return "_".join(text.split(" ")) if text else "N"
-
-    def _parse_float(self, value: int | float | str) -> float | str | None:
+    def _parse_float(self, value: float | str) -> float | str | None:
         """
         Safely converts a value to float.
         Returns None if the value is invalid or "UNKNOWN".
@@ -255,10 +291,10 @@ class ComicBook:
         try:
             if isinstance(value, (int, float)):
                 return float(value)
-            if isinstance(value, str):
-                # Check if it's a valid numeric string
-                if value.replace(".", "", 1).replace("-", "", 1).isdigit():
-                    return float(value)
+
+            # Check if it's a valid numeric string by replacing a couple of common characters
+            if isinstance(value, str) and value.replace(".", "", 1).replace("-", "", 1).isdigit():
+                return float(value)
         except (ValueError, AttributeError):
             pass
         return None
@@ -267,7 +303,7 @@ class ComicBook:
         """
         Tags the scanner page in the XML dictionary if one is detected.
         """
-        scanner_dict = json.load(open(scanner_db))
+        scanner_dict = _load_scanner_dict(scanner_db)
 
         for idx, page in enumerate(xml_dict):
             logger.debug(page)
@@ -280,27 +316,18 @@ class ComicBook:
 
         return xml_dict, "NA", 0
 
-    def check_for_scanner_page(self, xml_dict: list, file_list: list, opener, scanner_db: Path) -> tuple[list, str, int]:
+    def check_for_scanner_page(self, xml_dict: list, file_list: list, image_hashes: dict, scanner_db: Path) -> tuple[list, str, int]:
         """
-        Checks for scanner pages in the XML data and file list,
-        marking them as deleted if found. So we arn't removing scanner information,
-        instead just mark the image as deleted so it is ignored in readers.
-
-        Scanner information is moved to the XML.
+        Annotates each page in xml_dict with its file path and pre-computed image hash,
+        then delegates to _tag_scanner_page to detect and mark scanner pages.
         """
         if not isinstance(xml_dict, list) or not xml_dict:
             return [], "NA", 0
 
-        diff = 0
-        try:
-            with opener(self.current_file_path) as z:
-                for file_path, page_data in zip(file_list, xml_dict):
-                    page_data["FilePath"] = file_path
-                    file_hash = imagehash.average_hash(Image.open(z.open(file_path)))
-                    page_data["ImageHash"] = str(file_hash)
-                    logger.debug(f"Computed hash for page {page_data['Image']}: Hash={file_hash}, Similarity Score={diff}")
-        except Exception as e:
-            logger.error(f"Error computing image hashes: {e}")
+        for file_path, page_data in zip(file_list, xml_dict):
+            page_data["FilePath"] = file_path
+            page_data["ImageHash"] = image_hashes.get(file_path, "")
+            logger.debug(f"Hash for page {page_data['Image']}: {page_data['ImageHash']}")
 
         return self._tag_scanner_page(xml_dict, scanner_db)
 

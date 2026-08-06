@@ -1,15 +1,14 @@
-import os
-from dataclasses import dataclass
-
-from pathlib import Path
-import sys
-import yaml
-import typer
 import logging
+import os
+import sys
+from dataclasses import dataclass
+from pathlib import Path
 
-from cbscripts.sort_cb import main as sort_comics
+import typer
+import yaml
 
 from cbscripts.scan_dir import main as scan_dir
+from cbscripts.sort_cb import main as sort_comics
 
 app = typer.Typer()
 
@@ -18,6 +17,13 @@ class ConfigData:
     database_file: Path
     rename_format: str = "N"
     log_level: str = "INFO"
+    publisher_mapping_file: Path | None = None
+    scanner_db: Path | None = None
+    delimiter: str | None = None
+    hash_threads: int = 2
+
+    def __post_init__(self):
+        self.hash_threads = max(1, min(self.hash_threads, 12))
 
 
 def setup_logging(log_level: str):
@@ -82,13 +88,14 @@ def scan(
     update_database: bool = True,
     database_file: str = "cbscripts.db",
     hash_pages: bool = True,
-    log_level: str = "INFO",
-    scanner_db: str = "assets/scanner_hash.json",
+    scanner_db: str | None = None,
+    publisher_mapping_file: str | None = None,
+    hash_threads: int | None = None,
 ):
     """
     Scan a given directory of comic books (in CBZ format) and insert them into a SQLite database.
     """
-    scan_dir(context, directory, dry_run, scan_subs, output_directory, update_database, database_file, hash_pages)
+    scan_dir(context, directory, dry_run, scan_subs, output_directory, update_database, database_file, hash_pages, scanner_db, publisher_mapping_file, hash_threads)
 
 
 @app.command()
@@ -99,7 +106,6 @@ def sort(
     scan_subs: bool = False,
     rename_files: bool = False,
     output_directory: str = "cb_sorted/",
-    log_level: str = "INFO"
 ):
     """
     Rename comics in a given directory.

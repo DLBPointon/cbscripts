@@ -1,3 +1,4 @@
+import functools
 import json
 import logging
 import sqlite3
@@ -6,6 +7,8 @@ from pathlib import Path
 from cbscripts.sql_statements import statements
 
 logger = logging.getLogger(__name__)
+
+ASSETS_DIR = Path(__file__).parent / "assets"
 
 def get_comic_files(path, subdirectory_search=False):
     """
@@ -20,7 +23,7 @@ def get_comic_files(path, subdirectory_search=False):
         counter = len(comic_files)
     else:
         # Search for comic book files in the current directory only
-        comic_files = [file for file in path.iterdir() if file.is_file() and file.suffix in [".cbz", ".cbr", ".pdf"]]
+        comic_files = [file for file in path.iterdir() if file.is_file() and file.suffix in [".cbz", ".cbr"]]
         counter = len(comic_files)
 
     return comic_files, counter
@@ -83,12 +86,16 @@ def initialize_database(sql_connection: sqlite3.Connection) -> None:
     finally:
         cursor.close()
 
-def publisher_mapping(query_publisher: str) -> str:
-    """
-    Maps a query publisher string to a standardized publisher name.
-    If item is not found in the map, returns the original query publisher.
-    """
-    query_publisher_flat = "".join(query_publisher.lower().split("_"))
-    publisher_map: dict = json.load(open("publisher_mapping.json"))
+@functools.cache
+def _load_publisher_map(path: Path) -> dict:
+    with open(path) as f:
+        return json.load(f)
 
-    return publisher_map.get(query_publisher_flat, query_publisher)
+def publisher_mapping(query_publisher: str, mapping_file: Path) -> str:
+    query_publisher_flat = "".join(query_publisher.lower().split("_"))
+    return _load_publisher_map(mapping_file).get(query_publisher_flat, query_publisher)
+
+@functools.cache
+def _load_scanner_dict(scanner_db) -> dict:
+    with open(scanner_db) as f:
+        return json.load(f)
