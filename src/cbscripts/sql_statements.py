@@ -52,11 +52,11 @@ statements = {
             file_extension TEXT,
             file_size_kb REAL,
             has_scanner_page BOOLEAN DEFAULT 0,
+            is_duplicate BOOLEAN DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (series_id) REFERENCES series(id),
-            FOREIGN KEY (publisher_id) REFERENCES publishers(id),
-            UNIQUE(series_id, issue_number, volume, format)
+            FOREIGN KEY (publisher_id) REFERENCES publishers(id)
         );
     """,
 

@@ -32,7 +32,9 @@ def main(
     resolved_publisher_map = Path(publisher_mapping_file) if publisher_mapping_file else (context.obj.publisher_mapping_file or ASSETS_DIR / "publisher_mapping.json")
     resolved_hash_threads = hash_threads if hash_threads is not None else context.obj.hash_threads
     logger.info(f"Scanning directory: {directory}")
+
     comic_files, counter = get_comic_files(Path(directory), scan_subs)
+
     logger.info(f"Found {counter} comic files")
 
     sql_connection = None
@@ -44,13 +46,21 @@ def main(
             sql_connection = open_sqlite_connection(context.obj.database_file)
             initialize_database(sql_connection)
 
-        for comic in comic_files:
+        for comic in sorted(comic_files):
             delimiter = context.obj.delimiter if context.obj.delimiter else None
             comicbook = ComicBook(comic, hash_pages=hash_pages, rename_format=context.obj.rename_format, scanner_db=resolved_scanner_db, publisher_mapping_file=resolved_publisher_map, delimiter=delimiter, hash_threads=resolved_hash_threads)
-            print(comicbook.report())
+
+            if hasattr(comicbook, 'xml') and comicbook.xml != {}: # E.g. there was a ComicInfo.xml found
+                #print(comicbook.report())
+                print(f"{comicbook.id}\t{comicbook.xml['series']}\t{comicbook.xml['issue']}\t{comicbook.xml['volume']}\t{comicbook.xml['publisher']}\t{comicbook.proposed_file_path}")
 
             if update_database and sql_connection:
                 comicbook.send_to_sqlite(sql_connection)
+
+        if ComicBook._no_xmls:
+            logger.warning(f"{len(ComicBook._no_xmls)} comic(s) had no ComicInfo.xml:")
+            for path in ComicBook._no_xmls:
+                logger.warning(f"  - {path}")
 
     except sqlite3.Error as e:
         logger.error(f"Error connecting to database: {e}")

@@ -1,4 +1,55 @@
-{
-  "dccomics": "DC Comics",
-  "marvel": "Marvel Comics"
-}
+[
+  {
+    "canonical": "DC Comics",
+    "aliases": [
+      "dc comics",
+      "dc",
+      "dc entertainment",
+      "detective comics",
+      "DC_Comics"
+    ]
+  },
+  {
+    "canonical": "Marvel Comics",
+    "aliases": [
+      "marvel",
+      "marvel comics",
+      "marvel entertainment",
+      "Marvel_Comics"
+    ]
+  },
+  {
+    "canonical": "Image Comics",
+    "aliases": ["image", "image comics", "Image_Comics"]
+  },
+  {
+    "canonical": "Dark Horse Comics",
+    "aliases": [
+      "dark horse",
+      "dark horse comics",
+      "Dark_Horse",
+      "Dark_Horse_Comics"
+    ]
+  },
+  {
+    "canonical": "IDW Publishing",
+    "aliases": ["idw", "idw publishing", "IDW_Publishing"]
+  },
+  {
+    "canonical": "BOOM! Studios",
+    "aliases": ["boom", "boom studios", "boom! studios", "BOOM_Studios"]
+  },
+  {
+    "canonical": "Valiant Comics",
+    "aliases": [
+      "valiant",
+      "valiant comics",
+      "valiant entertainment",
+      "Valiant_Comics"
+    ]
+  },
+  {
+    "canonical": "Unknown Publisher",
+    "aliases": ["na", "n", "unknown", ""]
+  }
+]

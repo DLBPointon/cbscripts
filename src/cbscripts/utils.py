@@ -17,7 +17,7 @@ def get_comic_files(path, subdirectory_search=False):
     if subdirectory_search:
         # Recursively search for comic book files in all subdirectories
         comic_files = [
-            file for ext in ("*.cbz", "*.cbr", "*.pdf")
+            file for ext in ("*.cbz", "*.cbr") # Add .pdf back when we get a different pathway working for it, perhaps a PDFcomic class because it is so different.
             for file in path.rglob(ext)
         ]
         counter = len(comic_files)
@@ -88,12 +88,19 @@ def initialize_database(sql_connection: sqlite3.Connection) -> None:
 
 @functools.cache
 def _load_publisher_map(path: Path) -> dict:
-    with open(path) as f:
-        return json.load(f)
+    resolved = path or (ASSETS_DIR / "publisher_mapping.json")
+    with open(resolved) as f:
+        entries = json.load(f)
+    result = {}
+    for entry in entries:
+        for alias in entry["aliases"]:
+            key = alias.lower().replace(" ", "").replace("_", "")
+            result[key] = entry["canonical"]
+    return result
 
 def publisher_mapping(query_publisher: str, mapping_file: Path) -> str:
-    query_publisher_flat = "".join(query_publisher.lower().split("_"))
-    return _load_publisher_map(mapping_file).get(query_publisher_flat, query_publisher)
+    key = query_publisher.lower().replace(" ", "").replace("_", "")
+    return _load_publisher_map(mapping_file).get(key, query_publisher)
 
 @functools.cache
 def _load_scanner_dict(scanner_db) -> dict:

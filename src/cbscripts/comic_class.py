@@ -1,6 +1,7 @@
 import io
 import logging
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -15,7 +16,7 @@ import pikepdf
 import rarfile
 from PIL import Image
 
-from cbscripts.exceptions import ExtractionError
+from cbscripts.exceptions import ArchiveReadError, ExtractionError
 from cbscripts.utils import _load_scanner_dict, publisher_mapping
 from cbscripts.xml_dataclass import XML_data
 
@@ -34,7 +35,8 @@ def _hash_page(args: tuple[str, bytes]) -> tuple[str, str]:
 
 class ComicBook:
     _ids = count(0)
-    def __init__(self, file_path: Path, rename_format: str, scanner_db: Path, hash_pages=False, delimiter: str | None = None, publisher_mapping_file: Path | None = None, hash_threads: int = 2):
+    _no_xmls = list()
+    def __init__(self, file_path: Path, rename_format: str, scanner_db: Path, publisher_mapping_file: Path, hash_pages=False, delimiter: str | None = None, hash_threads: int = 2):
         self.id = next(self._ids)
         self.publisher_mapping_file = publisher_mapping_file
         self.hash_threads = max(2, min(hash_threads, 12))
@@ -58,18 +60,26 @@ class ComicBook:
         else:
             xml_data, page_list, image_hashes = {}, [], {}
 
-        xml_pages = xml_data.get("pages", [])
-        xml_data.pop("pages", None)
-        self.xml_data = XML_data(**xml_data)
+        if xml_data == {}:
+            logger.info(f"SKIP - No ComicInfo.xml found in {self.current_file_path}")
+            self._no_xmls.append(self.current_file_path)
 
-        if hash_pages and image_hashes:
-            self.pages, self.scanner, self.diff_hash = self.check_for_scanner_page(xml_pages, page_list, image_hashes, scanner_db)
         else:
-            self.pages, self.scanner, self.diff_hash = xml_pages, "NA", None
+            xml_pages = xml_data.get("pages", [])
+            xml_data.pop("pages", None)
 
-        self.proposed_file_name, self.proposed_file_path = self.get_new_name(rename_format, delimiter=self.delimiter)
+            self.xml_data = XML_data(**xml_data)
 
-        self.processing_time = time.perf_counter() - t_start
+            if hash_pages and image_hashes:
+                self.pages, self.scanner, self.diff_hash = self.check_for_scanner_page(xml_pages, page_list, image_hashes, scanner_db)
+            else:
+                self.pages, self.scanner, self.diff_hash = xml_pages, "NA", None
+
+            self.xml = self._correct_xml(xml_data, publisher_mapping_file)
+
+            self.proposed_file_name, self.proposed_file_path = self.get_new_name(rename_format, delimiter=self.delimiter)
+
+            self.processing_time = time.perf_counter() - t_start
 
 
     def __iter__(self):
@@ -99,21 +109,43 @@ class ComicBook:
         return txt.getvalue()
 
 
+    @staticmethod
+    def _correct_xml(xml_data: dict, publisher_mapping_file: Path) -> dict:
+        """
+        Correct various XML fields
+        """
+        new_publisher = publisher_mapping(xml_data.get("publisher", ""), publisher_mapping_file)
+        xml_data.update({
+            "publisher": new_publisher,
+            "volume": xml_data.get("volume", xml_data.get("year", "UNKNOWN")),
+            "issue": int(xml_data.get("issue", 0)),
+            "year": xml_data.get("year", "UNKNOWN")
+        })
+
+        return xml_data
+
+
     def get_new_name(self, rename_format: str, delimiter: str | None) -> tuple[str, str]:
+
+        xml_data = self.xml
+
         if rename_format == "N":
             return str(self.current_file_path), str(self.current_file_path)
 
         valid_rename_options = {
-            "publisher": self.xml_data.publisher,
-            "series": self.xml_data.series,
-            "issue": self.xml_data.issue,
+            "publisher": xml_data["publisher"],
+            "series": xml_data["series"],
+            "issue": f"{int(xml_data.get('issue', '0')):03d}",
             "format": self.file_extension,
-            "year": self.xml_data.year,
-            "volume": self.xml_data.volume
+            "year": xml_data["year"],
+            "volume": xml_data["volume"]
         }
 
         new_file_path = rename_format.format(**valid_rename_options)
         new_file_name = new_file_path.split("/")[-1] + self.file_extension
+        new_file_path = re.sub(r"[%&{}:<>*?$!\'\"@+|=.]", "", new_file_path) # specifically not _ or / or hash
+        new_file_name = re.sub(r"[%&{}:<>*?$!\'\"@+|=.]", "", new_file_name) # specifically not _ or / or hash
+
         new_file_path_full = new_file_path + self.file_extension
 
         if delimiter == None:
@@ -140,9 +172,15 @@ class ComicBook:
                     logger.debug(f"Reading ComicInfo.xml from {self.current_file_path}")
                 else:
                     logger.debug(f"No ComicInfo.xml found in {self.current_file_path}")
+
                 pages = self.extract_pages(file_list)
 
                 image_hashes: dict[str, str] = {}
+
+                # This big is AI written
+                # I wanted to introduce a function for parallelising the hashing of pages into
+                # batches of user specified size, i've not played with threading before
+                # TBH this works but my god did we need some trial and error here.
                 if hash_pages:
                     total_batches = -(-len(pages) // self.hash_threads)  # ceiling division
                     for i in range(0, len(pages), self.hash_threads):
@@ -150,12 +188,18 @@ class ComicBook:
                         batch_num = i // self.hash_threads + 1
                         logger.debug(f"Batch {batch_num}/{total_batches}: reading {len(batch)} pages")
                         # Read bytes sequentially — zipfile is not thread-safe
-                        batch_bytes = {p: archive.read(p) for p in batch}
+                        try:
+                            batch_bytes = {p: archive.read(p) for p in batch}
+                        except ArchiveReadError as e:
+                            logger.error(f"Batch {batch_num}/{total_batches}: failed to read pages: {e}")
+                            continue
+
                         logger.debug(f"Batch {batch_num}/{total_batches}: submitting to {self.hash_threads} threads")
                         # Hash in parallel — PIL/numpy release the GIL
                         t0 = time.perf_counter()
                         with ThreadPoolExecutor(max_workers=self.hash_threads) as pool:
                             image_hashes.update(pool.map(_hash_page, batch_bytes.items()))
+
                         elapsed = time.perf_counter() - t0
                         logger.debug(f"Batch {batch_num}/{total_batches}: {len(batch)} pages hashed in {elapsed:.3f}s ({elapsed / len(batch):.3f}s/page avg)")
 
@@ -197,9 +241,21 @@ class ComicBook:
 
     def extract_pages(self, file_list) -> list:
         """
-        Extracts image file paths from the archive.
+        Extracts image file paths from the archive if in known goof formats, else warn user.
         """
-        return sorted([ i for i in file_list if i.endswith((".jpg", ".png")) ])
+        page_list: list[str] = []
+        image_extensions = (".jpeg", ".jpg", ".png", ".webp")
+        for page in file_list:
+            if page.endswith(image_extensions):
+                page_list.append(page)
+            elif page.endswith(".xml"):
+                # Skip XML files - those are the metadata files, we don't need to log them either.
+                continue
+            elif page.endswith("/"):
+                logger.warning(f"Page is a  {page}")
+            else:
+                logger.warning(f"FOUND NON-STANDARD IMAGE FORMAT - WILL CAUSE ISSUES: {page} - expecting: {image_extensions}")
+        return sorted(page_list)
 
 
 
@@ -219,7 +275,7 @@ class ComicBook:
         for page in pages:
             page_width = int(page.get('ImageWidth', 0))
             # If no Type or Type is not already set, check for double page
-            if ('Type' not in page or page['Type'] == '') and (page_width != 0 and page_width >= double_page_width * 0.9):  # 90% threshold for tolerance
+            if ('Type' not in page or page['Type'] == '') and (page_width != 0) and (page_width >= double_page_width * 0.9):  # 90% threshold for tolerance
                 page['Type'] = 'DoublePage'
                 logger.info(f"Double page detected: {page['Image']} | Width: {page_width} | Single Page Width: {single_page_width} | Page Type is now labelled: '{page['Type']}'")
 
@@ -235,7 +291,7 @@ class ComicBook:
         TAG_MAPPING = {
             "AgeRating": ("age_rating", str),
             "Series": ("series", str),
-            "Publisher": ("publisher", lambda text: publisher_mapping(text, self.publisher_mapping_file)),
+            "Publisher": ("publisher", str),
             "Volume": ("volume", str),
             "Year": ("year", str),
             "Month": ("month", str),
@@ -384,7 +440,27 @@ class ComicBook:
                 result = cursor.fetchone()
                 publisher_id = result[0] if result else None
 
-            # 3. Insert issue
+            # 3. Check for duplicate by comic identity (series + publisher + issue + volume + format)
+            cursor.execute(
+                """SELECT id FROM issues
+                   WHERE series_id = ? AND publisher_id IS ? AND issue_number = ?
+                   AND volume IS ? AND format IS ?""",
+                (
+                    series_id,
+                    publisher_id,
+                    x.issue,
+                    self._to_int(x.volume),
+                    x.format,
+                )
+            )
+            is_duplicate = 1 if cursor.fetchone() is not None else 0
+            if is_duplicate:
+                logger.warning(
+                    f"Duplicate detected: {x.series} #{x.issue} vol.{x.volume} "
+                    f"— inserting with is_duplicate=1"
+                )
+
+            # 4. Insert issue
             cursor.execute(
                 """INSERT INTO issues (
                     series_id, publisher_id, issue_number, volume, title,
@@ -392,8 +468,8 @@ class ComicBook:
                     age_rating, language_iso, community_rating, web_link,
                     scan_information, summary, notes, series_group, format,
                     is_manga, is_black_and_white, main_character_or_team, review,
-                    file_path, file_name, file_extension, file_size_kb, has_scanner_page
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    file_path, file_name, file_extension, file_size_kb, has_scanner_page, is_duplicate
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     series_id,
                     publisher_id,
@@ -421,13 +497,14 @@ class ComicBook:
                     self.current_file_name,
                     self.file_extension,
                     self.file_size,
-                    1 if self.scanner != "NA" else 0
+                    1 if self.scanner != "NA" else 0,
+                    is_duplicate,
                 )
             )
 
             issue_id = cursor.lastrowid
 
-            # 4. Insert pages
+            # 5. Insert pages
             for page in self.pages:
                 cursor.execute(
                     """INSERT INTO pages (
@@ -445,7 +522,7 @@ class ComicBook:
                     )
                 )
 
-            # 5. Insert M2M relationships
+            # 6. Insert M2M relationships
             self._insert_m2m_data(cursor, issue_id, x.writer,       "writers",       "issue_writers",       "writer_id")
             self._insert_m2m_data(cursor, issue_id, x.penciller,    "pencilers",     "issue_pencilers",     "penciler_id")
             self._insert_m2m_data(cursor, issue_id, x.inker,        "inkers",        "issue_inkers",        "inker_id")
