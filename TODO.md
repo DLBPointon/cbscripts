@@ -1,0 +1,2 @@
+- Duplicate checks
+  - During scan, if you find multiple comics of the same (series, issue number and volume), mark them as duplicates in the db for manual resolution.

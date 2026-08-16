@@ -1,0 +1,58 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ComicInfo>
+  <Series>Absolute Batman</Series>
+  <Number>8</Number>
+  <Volume>2024</Volume>
+  <Year>2025</Year>
+  <PageCount>29</PageCount>
+  <Pages>
+    <Page DoublePage="False" Image="0" ImageHeight="3057" ImageSize="2134840" ImageWidth="1988" Type="FrontCover" />
+    <Page DoublePage="False" Image="1" ImageHeight="3056" ImageSize="1688885" ImageWidth="1988" />
+    <Page DoublePage="False" Image="2" ImageHeight="3057" ImageSize="928824" ImageWidth="1988" />
+    <Page DoublePage="True" Image="3" ImageHeight="3057" ImageSize="1141549" ImageWidth="3975" />
+    <Page DoublePage="False" Image="4" ImageHeight="3057" ImageSize="816954" ImageWidth="1988" />
+    <Page DoublePage="False" Image="5" ImageHeight="3057" ImageSize="867568" ImageWidth="1988" />
+    <Page DoublePage="False" Image="6" ImageHeight="3057" ImageSize="1258182" ImageWidth="1988" />
+    <Page DoublePage="False" Image="7" ImageHeight="3057" ImageSize="1051708" ImageWidth="1988" />
+    <Page DoublePage="False" Image="8" ImageHeight="3057" ImageSize="1689288" ImageWidth="1988" />
+    <Page DoublePage="False" Image="9" ImageHeight="3057" ImageSize="1070992" ImageWidth="1988" />
+    <Page DoublePage="True" Image="10" ImageHeight="3057" ImageSize="2636888" ImageWidth="3975" />
+    <Page DoublePage="False" Image="11" ImageHeight="3057" ImageSize="1017447" ImageWidth="1988" />
+    <Page DoublePage="False" Image="12" ImageHeight="3057" ImageSize="1041003" ImageWidth="1988" />
+    <Page DoublePage="False" Image="13" ImageHeight="3057" ImageSize="1382540" ImageWidth="1988" />
+    <Page DoublePage="False" Image="14" ImageHeight="3057" ImageSize="1222673" ImageWidth="1988" />
+    <Page DoublePage="False" Image="15" ImageHeight="3057" ImageSize="1267080" ImageWidth="1988" />
+    <Page DoublePage="False" Image="16" ImageHeight="3057" ImageSize="1103320" ImageWidth="1988" />
+    <Page DoublePage="False" Image="17" ImageHeight="3057" ImageSize="1450209" ImageWidth="1988" />
+    <Page DoublePage="False" Image="18" ImageHeight="3057" ImageSize="1684148" ImageWidth="1988" />
+    <Page DoublePage="False" Image="19" ImageHeight="3057" ImageSize="1351618" ImageWidth="1988" />
+    <Page DoublePage="False" Image="20" ImageHeight="3057" ImageSize="1309042" ImageWidth="1988" />
+    <Page DoublePage="False" Image="21" ImageHeight="3057" ImageSize="1279212" ImageWidth="1988" />
+    <Page DoublePage="False" Image="22" ImageHeight="3056" ImageSize="1579337" ImageWidth="1988" />
+    <Page DoublePage="False" Image="23" ImageHeight="3056" ImageSize="1232816" ImageWidth="1988" />
+    <Page DoublePage="False" Image="24" ImageHeight="3056" ImageSize="1669149" ImageWidth="1988" />
+    <Page DoublePage="False" Image="25" ImageHeight="3056" ImageSize="1844362" ImageWidth="1988" />
+    <Page DoublePage="False" Image="26" ImageHeight="3056" ImageSize="858553" ImageWidth="1988" />
+    <Page DoublePage="False" Image="27" ImageHeight="3057" ImageSize="1578291" ImageWidth="1988" />
+    <Page DoublePage="True" Image="28" ImageHeight="768" ImageSize="135942" ImageWidth="1024" />
+  </Pages>
+  <Count>15</Count>
+  <Title>Absolute Zero</Title>
+  <Summary>GOTHAM IN THE GRASP OF MR. FREEZE!
+
+Batman is in the fight for his life against this icy new threat. But in the end, what terrifying truth will be unearthed about Ark M and...Joker?</Summary>
+  <Notes>Tagged with ComicTagger 1.6.0b11.dev0 using info from Comic Vine on 2026-08-12 00:07:40. [Issue ID 1109522]</Notes>
+  <Publisher>DC Comics</Publisher>
+  <Day>1</Day>
+  <Month>7</Month>
+  <Web>https://comicvine.gamespot.com/absolute-batman-8-absolute-zero/4000-1109522/</Web>
+  <Characters>Victor Freeze Jr.,Malone,Riddler,Penguin,Batman,Joker,Joe Chill,Mr. Freeze,Thomas Wayne,Killer Croc,Two-Face</Characters>
+  <Locations>Gotham City Zoo,Crime Alley,Croc's Gym,The Elseworld,V-Core,Gotham City</Locations>
+  <Writer>Scott Snyder</Writer>
+  <Penciller>Marcos Martín</Penciller>
+  <Inker>Marcos Martín</Inker>
+  <Colorist>Muntsa Vicente</Colorist>
+  <Letterer>Clayton Cowles</Letterer>
+  <CoverArtist>Bruno Redondo,Frank Martin Jr.,Marcelo Maiolo,Marcos Martín,Nick Dragotta,Ramon Villalobos,Yanick Paquette</CoverArtist>
+  <Editor>Andrew Marino,Katie Kubert</Editor>
+</ComicInfo>
