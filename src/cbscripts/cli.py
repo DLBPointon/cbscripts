@@ -6,11 +6,13 @@ from pathlib import Path
 
 import typer
 import yaml
+from rich.logging import RichHandler
 
 from cbscripts.scan_dir import main as scan_dir
 from cbscripts.sort_cb import main as sort_comics
 
 app = typer.Typer()
+
 
 @dataclass
 class ConfigData:
@@ -37,14 +39,16 @@ def setup_logging(log_level: str):
     }
 
     if log_level.upper() not in level_mapping:
-        raise ValueError(f"Invalid log level: {log_level}\nSelect from {level_mapping.values()}")
+        raise ValueError(
+            f"Invalid log level: {log_level}\nSelect from {level_mapping.values()}"
+        )
 
     logging.basicConfig(
         level=level_mapping[log_level.upper()],
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[
             logging.FileHandler("ComicBookScripts.log"),  # logs to file
-            logging.StreamHandler(),  # logs to console
+            RichHandler(rich_tracebacks=True),  # logs to console
         ],
     )
     return logging.getLogger("ComicBookScripts")
@@ -62,8 +66,20 @@ def load_config(config_file: str) -> ConfigData:
 @app.callback()
 def get_config(
     context: typer.Context,
-    config_file: str = typer.Option(None, "--config", "-c", help="Path to Global config file", show_default=True, file_okay=True, dir_okay=False, readable=True, writable=False),
-    log_level: str = typer.Option("INFO", "--log-level", "-l", help="Log level", show_default=True),
+    config_file: str = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to Global config file",
+        show_default=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        writable=False,
+    ),
+    log_level: str = typer.Option(
+        "INFO", "--log-level", "-l", help="Log level", show_default=True
+    ),
 ):
 
     config_file = config_file if config_file else "~/.config/cbscripts/.cbscript.config"
@@ -81,12 +97,9 @@ def get_config(
 def scan(
     context: typer.Context,
     directory: str,
-    dry_run: bool = False,
     scan_subs: bool = False,
-    rename_files: bool = False,
     output_directory: str = "cb_sorted/",
     update_database: bool = True,
-    database_file: str = "cbscripts.db",
     hash_pages: bool = True,
     scanner_db: str | None = None,
     publisher_mapping_file: str | None = None,
@@ -95,7 +108,16 @@ def scan(
     """
     Scan a given directory of comic books (in CBZ format) and insert them into a SQLite database.
     """
-    scan_dir(context, directory, dry_run, scan_subs, output_directory, update_database, database_file, hash_pages, scanner_db, publisher_mapping_file, hash_threads)
+    scan_dir(
+        context,
+        directory,
+        scan_subs,
+        update_database,
+        hash_pages,
+        scanner_db,
+        publisher_mapping_file,
+        hash_threads,
+    )
 
 
 @app.command()

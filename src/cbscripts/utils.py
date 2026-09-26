@@ -10,33 +10,47 @@ logger = logging.getLogger(__name__)
 
 ASSETS_DIR = Path(__file__).parent / "assets"
 
-def get_comic_files(path, subdirectory_search=False):
+
+def get_comic_files(
+    path, subdirectory_search=False
+) -> tuple[list[Path], int, list[Path], int]:
     """
     Returns a list of comic book files in the given path.
     """
-    if subdirectory_search:
-        # Recursively search for comic book files in all subdirectories
-        comic_files = [
-            file for ext in ("*.cbz", "*.cbr") # Add .pdf back when we get a different pathway working for it, perhaps a PDFcomic class because it is so different.
-            for file in path.rglob(ext)
-        ]
-        counter = len(comic_files)
-    else:
-        # Search for comic book files in the current directory only
-        comic_files = [file for file in path.iterdir() if file.is_file() and file.suffix in [".cbz", ".cbr"]]
-        counter = len(comic_files)
+    valid_format_files = []
+    invalid_format_files = []
 
-    return comic_files, counter
+    # if subdirectory_search, recursively search for comic book files in all subdirectories
+    all_files = list(path.rglob("*")) if subdirectory_search else list(path.iterdir())
+
+    valid_formats = (".cbz", ".cbr")
+
+    for i in all_files:
+        if i.is_file() and i.suffix in valid_formats:
+            all_files.remove(i)
+            valid_format_files.append(i)
+        elif i.is_file() and i.suffix not in valid_formats:
+            all_files.remove(i)
+            invalid_format_files.append(i)
+
+    return (
+        valid_format_files,
+        len(valid_format_files),
+        invalid_format_files,
+        len(invalid_format_files),
+    )
+
 
 def open_sqlite_connection(database_file: str) -> sqlite3.Connection:
     """
     Opens a connection to the SQLite database and returns the connection object.
     """
     sql_connection = sqlite3.connect(database_file)
+    sql_connection.execute("PRAGMA foreign_keys = ON")
     cursor = sql_connection.cursor()
 
     # Execute a query to get the SQLite version
-    query = 'SELECT sqlite_version();'
+    query = "SELECT sqlite_version();"
     cursor.execute(query)
 
     result = cursor.fetchall()
@@ -46,6 +60,7 @@ def open_sqlite_connection(database_file: str) -> sqlite3.Connection:
     cursor.close()
 
     return sql_connection
+
 
 def initialize_database(sql_connection: sqlite3.Connection) -> None:
     """
@@ -86,6 +101,7 @@ def initialize_database(sql_connection: sqlite3.Connection) -> None:
     finally:
         cursor.close()
 
+
 @functools.cache
 def _load_publisher_map(path: Path) -> dict:
     resolved = path or (ASSETS_DIR / "publisher_mapping.json")
@@ -98,9 +114,11 @@ def _load_publisher_map(path: Path) -> dict:
             result[key] = entry["canonical"]
     return result
 
+
 def publisher_mapping(query_publisher: str, mapping_file: Path) -> str:
     key = query_publisher.lower().replace(" ", "").replace("_", "")
     return _load_publisher_map(mapping_file).get(key, query_publisher)
+
 
 @functools.cache
 def _load_scanner_dict(scanner_db) -> dict:

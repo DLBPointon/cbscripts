@@ -14,32 +14,43 @@ from cbscripts.utils import (
 
 logger = logging.getLogger(__name__)
 
+
 def main(
     context: typer.Context,
     directory: str,
-    dry_run: bool = False,
     scan_subs: bool = False,
-    output_directory: str = "cb_sorted/",
     update_database: bool = True,
-    database_file: str = "cbscripts.db",
     hash_pages: bool = True,
     scanner_db: str | None = None,
     publisher_mapping_file: str | None = None,
     hash_threads: int | None = None,
 ):
     # Resolve paths: CLI arg → config file value → package default
-    resolved_scanner_db = Path(scanner_db) if scanner_db else (context.obj.scanner_db or ASSETS_DIR / "scanner_hash.json")
-    resolved_publisher_map = Path(publisher_mapping_file) if publisher_mapping_file else (context.obj.publisher_mapping_file or ASSETS_DIR / "publisher_mapping.json")
-    resolved_hash_threads = hash_threads if hash_threads is not None else context.obj.hash_threads
+    resolved_scanner_db = (
+        Path(scanner_db)
+        if scanner_db
+        else (context.obj.scanner_db or ASSETS_DIR / "scanner_hash.json")
+    )
+    resolved_publisher_map = (
+        Path(publisher_mapping_file)
+        if publisher_mapping_file
+        else (
+            context.obj.publisher_mapping_file or ASSETS_DIR / "publisher_mapping.json"
+        )
+    )
+    resolved_hash_threads = (
+        hash_threads if hash_threads is not None else context.obj.hash_threads
+    )
     logger.info(f"Scanning directory: {directory}")
 
-    comic_files, counter = get_comic_files(Path(directory), scan_subs)
+    comic_files, counter, invalid_files, invalid_counter = get_comic_files(
+        Path(directory), scan_subs
+    )
 
     logger.info(f"Found {counter} comic files")
 
     sql_connection = None
     try:
-
         logger.info(f"Updating database: {update_database}")
         if update_database:
             # its a .database_file here because its a object it self
@@ -48,11 +59,15 @@ def main(
 
         for comic in sorted(comic_files):
             delimiter = context.obj.delimiter if context.obj.delimiter else None
-            comicbook = ComicBook(comic, hash_pages=hash_pages, rename_format=context.obj.rename_format, scanner_db=resolved_scanner_db, publisher_mapping_file=resolved_publisher_map, delimiter=delimiter, hash_threads=resolved_hash_threads)
-
-            if hasattr(comicbook, 'xml') and comicbook.xml != {}: # E.g. there was a ComicInfo.xml found
-                #print(comicbook.report())
-                print(f"{comicbook.id}\t{comicbook.xml['series']}\t{comicbook.xml['issue']}\t{comicbook.xml['volume']}\t{comicbook.xml['publisher']}\t{comicbook.proposed_file_path}")
+            comicbook = ComicBook(
+                comic,
+                hash_pages=hash_pages,
+                rename_format=context.obj.rename_format,
+                scanner_db=resolved_scanner_db,
+                publisher_mapping_file=resolved_publisher_map,
+                delimiter=delimiter,
+                hash_threads=resolved_hash_threads,
+            )
 
             if update_database and sql_connection:
                 comicbook.send_to_sqlite(sql_connection)
@@ -62,13 +77,19 @@ def main(
             for path in ComicBook._no_xmls:
                 logger.warning(f"  - {path}")
 
+        if invalid_counter != 0:
+            logger.warning(f"{invalid_counter} comic(s) had invalid format:")
+            logger.warning(invalid_files)
+            with open("invalid_files.txt", "w") as f:
+                f.write("\n".join(str(i) for i in invalid_files))
+
     except sqlite3.Error as e:
         logger.error(f"Error connecting to database: {e}")
 
     finally:
         if sql_connection:
             sql_connection.close()
-            logger.info('SQLite Connection closed')
+            logger.info("SQLite Connection closed")
 
     logger.info(f"Scanned directory: {directory}")
     logger.info(f"Found {counter} comic files")
