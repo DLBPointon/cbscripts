@@ -1,4 +1,4 @@
-These are files which I ask AI to generate based on:
+These are proposal files which I ask AI to generate based on various needs:
 
 - proposal.md
   - A need to regenerate the comicinfo.xml version 2 and 2.1
