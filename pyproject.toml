@@ -29,6 +29,9 @@ docstring-code-line-length = 100
 indent-style = "space"
 indent-size = 4
 
+[tool.ruff.mccopies]
+ignore = ["E501"]
+
 [project.scripts]
 cbscripts = "cbscripts.cli:app"
 

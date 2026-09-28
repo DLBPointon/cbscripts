@@ -1,40 +1,72 @@
 from datetime import datetime
 
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy.orm.properties import ForeignKey
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
     pass
 
 
+# ---------------------------------------------------------------------------
+# Series
+# ---------------------------------------------------------------------------
+
+
 class Comic(Base):
     __tablename__ = "series"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str]
+
     created: Mapped[datetime] = mapped_column(default=datetime.now)
     updated: Mapped[datetime] = mapped_column(default=datetime.now)
+
+    issues: Mapped[list["Issues"]] = relationship(
+        back_populates="series",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"Comic(id={self.id!r}, title={self.title!r})"
 
 
+# ---------------------------------------------------------------------------
+# Publisher
+# ---------------------------------------------------------------------------
+
+
 class Publisher(Base):
     __tablename__ = "publishers"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str]
     imprint: Mapped[str]
 
+    issues: Mapped[list["Issues"]] = relationship(
+        back_populates="publisher",
+    )
+
+    def __repr__(self) -> str:
+        return f"Publisher(id={self.id!r}, name={self.name!r})"
+
+
+# ---------------------------------------------------------------------------
+# Issue
+# ---------------------------------------------------------------------------
+
 
 class Issues(Base):
     __tablename__ = "issues"
+
     id: Mapped[int] = mapped_column(primary_key=True)
-    title: Mapped[str]
-    number: Mapped[int]
+
+    issue: Mapped[int]
     volume: Mapped[int]
-    published_year: Mapped[int]
-    published_month: Mapped[int]
-    published_day: Mapped[int]
+    year: Mapped[int]
+    month: Mapped[int]
+    day: Mapped[int]
+    web: Mapped[str]
     page_count: Mapped[int]
     age_rating: Mapped[str]
     language_iso: Mapped[str]
@@ -43,31 +75,107 @@ class Issues(Base):
     is_black_and_white: Mapped[bool]
     main_character_or_team: Mapped[str]
     review: Mapped[str]
-    scanner_page: Mapped[bool]
+    scanner_group: Mapped[str]
     is_duplicate: Mapped[bool]
-    weblink: Mapped[str]
-    scan_information: Mapped[str]
+    scanner_hash_difference: Mapped[str]
     summary: Mapped[str]
     notes: Mapped[str]
     series_group: Mapped[str]
+
+    # Foreign keys
     series_id: Mapped[int] = mapped_column(ForeignKey("series.id"))
+
     publisher_id: Mapped[int] = mapped_column(ForeignKey("publishers.id"))
-    created: Mapped[datetime] = mapped_column(default=datetime.now)
-    updated: Mapped[datetime] = mapped_column(default=datetime.now)
+
+    story_arc_id: Mapped[int | None] = mapped_column(
+        ForeignKey("story_arcs.id"),
+        nullable=True,
+    )
+
+    team_id: Mapped[int | None] = mapped_column(
+        ForeignKey("teams.id"),
+        nullable=True,
+    )
+
+    # Relationships
+    series: Mapped["Comic"] = relationship(
+        back_populates="issues",
+    )
+
+    publisher: Mapped["Publisher"] = relationship(
+        back_populates="issues",
+    )
+
+    story_arc: Mapped["StoryArc | None"] = relationship(
+        back_populates="issues",
+    )
+
+    team: Mapped["Team | None"] = relationship(
+        back_populates="issues",
+    )
+
+    issue_data: Mapped[list["IssueData"]] = relationship(
+        back_populates="issue",
+        cascade="all, delete-orphan",
+    )
+
+    pages: Mapped[list["Page"]] = relationship(
+        back_populates="issue",
+        cascade="all, delete-orphan",
+    )
+
+    people: Mapped[list["People"]] = relationship(
+        secondary="issue_people",
+        back_populates="issues",
+    )
+
+    characters: Mapped[list["Character"]] = relationship(
+        secondary="issues_characters",
+        back_populates="issues",
+    )
+
+    genres: Mapped[list["Genre"]] = relationship(
+        secondary="issues_genres",
+        back_populates="issues",
+    )
+
+    locations: Mapped[list["Location"]] = relationship(
+        secondary="issues_locations",
+        back_populates="issues",
+    )
 
     def __repr__(self) -> str:
-        return f"Issues(id={self.id!r}, title={self.title!r}, number={self.number!r}, volume={self.volume!r})"
+        return (
+            f"Issues("
+            f"id={self.id!r}, "
+            f"series={self.series.title!r}, "
+            f"number={self.issue!r}, "
+            f"volume={self.volume!r}"
+            f")"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Issue file data
+# ---------------------------------------------------------------------------
 
 
 class IssueData(Base):
     __tablename__ = "issue_data"
+
     id: Mapped[int] = mapped_column(primary_key=True)
+
     issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id"))
+
     path: Mapped[str]
     new_path: Mapped[str]
     name: Mapped[str]
     size_kb: Mapped[int]
     format: Mapped[str]
+
+    issue: Mapped["Issues"] = relationship(
+        back_populates="issue_data",
+    )
 
     def __repr__(self) -> str:
         return (
@@ -75,35 +183,80 @@ class IssueData(Base):
         )
 
 
+# ---------------------------------------------------------------------------
+# Pages
+# ---------------------------------------------------------------------------
+
+
 class Page(Base):
     __tablename__ = "pages"
+
     id: Mapped[int] = mapped_column(primary_key=True)
+
     issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id"))
-    page_number: Mapped[int]
-    image_width: Mapped[int]
-    image_height: Mapped[int]
-    image_bytes: Mapped[int]
-    page_type: Mapped[str]
+
+    image: Mapped[int]
+    width: Mapped[int]
+    height: Mapped[int]
+    path: Mapped[str]
+    size: Mapped[int]
+    hash: Mapped[str]
+    type: Mapped[str]
+
+    issue: Mapped["Issues"] = relationship(
+        back_populates="pages",
+    )
 
     def __repr__(self) -> str:
-        return f"Page(id={self.id!r}, page_number={self.page_number!r}, image_width={self.image_width!r}, image_height={self.image_height!r}, image_bytes={self.image_bytes!r}, page_type={self.page_type!r})"
+        return (
+            f"Page("
+            f"id={self.id!r}, "
+            f"page_number={self.image!r}, "
+            f"image_width={self.width!r}, "
+            f"image_height={self.height!r}, "
+            f"image_bytes={self.size!r}, "
+            f"page_type={self.type!r}"
+            f")"
+        )
+
+
+# ---------------------------------------------------------------------------
+# People
+# ---------------------------------------------------------------------------
 
 
 class People(Base):
     __tablename__ = "people"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str]
     role: Mapped[str]
+
+    issues: Mapped[list["Issues"]] = relationship(
+        secondary="issue_people",
+        back_populates="people",
+    )
 
     def __repr__(self) -> str:
         return f"People(id={self.id!r}, name={self.name!r}, role={self.role!r})"
 
 
+# ---------------------------------------------------------------------------
+# Characters
+# ---------------------------------------------------------------------------
+
+
 class Character(Base):
     __tablename__ = "characters"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str]
     is_main: Mapped[bool]
+
+    issues: Mapped[list["Issues"]] = relationship(
+        secondary="issues_characters",
+        back_populates="characters",
+    )
 
     def __repr__(self) -> str:
         return (
@@ -111,57 +264,140 @@ class Character(Base):
         )
 
 
-class GenericMixin:
+# ---------------------------------------------------------------------------
+# Locations
+# ---------------------------------------------------------------------------
+
+
+class Location(Base):
+    __tablename__ = "locations"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str]
 
-
-class Location(Base, GenericMixin):
-    __tablename__ = "locations"
+    issues: Mapped[list["Issues"]] = relationship(
+        secondary="issues_locations",
+        back_populates="locations",
+    )
 
     def __repr__(self) -> str:
         return f"Location(id={self.id!r}, name={self.name!r})"
 
 
-class Team(Base, GenericMixin):
+# ---------------------------------------------------------------------------
+# Teams
+# ---------------------------------------------------------------------------
+
+
+class Team(Base):
     __tablename__ = "teams"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str]
+
+    issues: Mapped[list["Issues"]] = relationship(
+        back_populates="team",
+    )
 
     def __repr__(self) -> str:
         return f"Team(id={self.id!r}, name={self.name!r})"
 
 
-class StoryArc(Base, GenericMixin):
+# ---------------------------------------------------------------------------
+# Story arcs
+# ---------------------------------------------------------------------------
+
+
+class StoryArc(Base):
     __tablename__ = "story_arcs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str]
+
+    issues: Mapped[list["Issues"]] = relationship(
+        back_populates="story_arc",
+    )
 
     def __repr__(self) -> str:
         return f"StoryArc(id={self.id!r}, name={self.name!r})"
 
 
-class Genre(Base, GenericMixin):
+# ---------------------------------------------------------------------------
+# Genres
+# ---------------------------------------------------------------------------
+
+
+class Genre(Base):
     __tablename__ = "genres"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str]
+
+    issues: Mapped[list["Issues"]] = relationship(
+        secondary="issues_genres",
+        back_populates="genres",
+    )
 
     def __repr__(self) -> str:
         return f"Genre(id={self.id!r}, name={self.name!r})"
 
 
-# M2M Junction Tables
+# ===========================================================================
+# Association tables
+# ===========================================================================
 
 
 class IssuePeople(Base):
     __tablename__ = "issue_people"
-    issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id"), primary_key=True)
-    person_id: Mapped[int] = mapped_column(ForeignKey("people.id"), primary_key=True)
+
+    issue_id: Mapped[int] = mapped_column(
+        ForeignKey("issues.id"),
+        primary_key=True,
+    )
+
+    person_id: Mapped[int] = mapped_column(
+        ForeignKey("people.id"),
+        primary_key=True,
+    )
 
 
 class CharacterIssue(Base):
     __tablename__ = "issues_characters"
+
     character_id: Mapped[int] = mapped_column(
-        ForeignKey("characters.id"), primary_key=True
+        ForeignKey("characters.id"),
+        primary_key=True,
     )
-    issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id"), primary_key=True)
+
+    issue_id: Mapped[int] = mapped_column(
+        ForeignKey("issues.id"),
+        primary_key=True,
+    )
 
 
 class GenreIssue(Base):
     __tablename__ = "issues_genres"
-    genre_id: Mapped[int] = mapped_column(ForeignKey("genres.id"), primary_key=True)
-    issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id"), primary_key=True)
+
+    genre_id: Mapped[int] = mapped_column(
+        ForeignKey("genres.id"),
+        primary_key=True,
+    )
+
+    issue_id: Mapped[int] = mapped_column(
+        ForeignKey("issues.id"),
+        primary_key=True,
+    )
+
+
+class LocationIssue(Base):
+    __tablename__ = "issues_locations"
+
+    location_id: Mapped[int] = mapped_column(
+        ForeignKey("locations.id"),
+        primary_key=True,
+    )
+
+    issue_id: Mapped[int] = mapped_column(
+        ForeignKey("issues.id"),
+        primary_key=True,
+    )

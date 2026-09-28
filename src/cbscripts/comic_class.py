@@ -1,7 +1,6 @@
 import io
 import logging
 import re
-import sqlite3
 import threading
 import time
 import typing
@@ -19,7 +18,7 @@ from PIL import Image
 
 from cbscripts.exceptions import ArchiveReadError, ExtractionError
 from cbscripts.utils import _load_scanner_dict, publisher_mapping
-from cbscripts.xml_dataclass import XML_data
+from cbscripts.xml_dataclass import Page_data, XML_data
 
 logger = logging.getLogger(__name__)
 
@@ -81,18 +80,31 @@ class ComicBook:
 
         else:
             xml_pages = xml_data.get("pages", [])
-            xml_data.pop("pages", None)
 
-            self.xml_data = XML_data(**xml_data)
+            xml = self._correct_xml(xml_data, publisher_mapping_file)
+
+            self.xml_data = XML_data(**xml)
 
             if hash_pages and image_hashes:
-                self.pages, self.scanner, self.diff_hash = self.check_for_scanner_page(
+                page_list, self.scanner, self.diff_hash = self.check_for_scanner_page(
                     xml_pages, page_list, image_hashes, scanner_db
                 )
+                self.pages = [
+                    Page_data(
+                        image=page["Image"],
+                        height=page.get(
+                            "ImageHeight", 0
+                        ),  # COME BACK AND CALCULATE YOU COWARD
+                        width=page.get("ImageWidth", 0),
+                        size=page["ImageSize"],
+                        path=page["FilePath"],
+                        hash=page["ImageHash"],
+                        type=page.get("Type", "NA"),
+                    )
+                    for page in page_list
+                ]
             else:
                 self.pages, self.scanner, self.diff_hash = xml_pages, "NA", None
-
-            self.xml = self._correct_xml(xml_data, publisher_mapping_file)
 
             self.proposed_file_name, self.proposed_file_path = self.get_new_name(
                 rename_format, delimiter=self.delimiter
@@ -143,9 +155,12 @@ class ComicBook:
         """
         Correct various XML fields
         """
+        xml_data.pop("pages", None)
+
         new_publisher = publisher_mapping(
             xml_data.get("publisher", ""), publisher_mapping_file
         )
+
         xml_data.update(
             {
                 "publisher": new_publisher,
@@ -161,18 +176,18 @@ class ComicBook:
         self, rename_format: str, delimiter: str | None
     ) -> tuple[str, str]:
 
-        xml_data = self.xml
+        xml_data = self.xml_data
 
         if rename_format == "N":
             return str(self.current_file_path), str(self.current_file_path)
 
         valid_rename_options = {
-            "publisher": xml_data["publisher"],
-            "series": xml_data["series"],
-            "issue": f"{int(xml_data.get('issue', '0')):03d}",
+            "publisher": xml_data.publisher,
+            "series": xml_data.series,
+            "issue": f"{int(xml_data.issue):03d}",
             "format": self.file_extension,
-            "year": xml_data["year"],
-            "volume": xml_data["volume"],
+            "year": xml_data.year,
+            "volume": xml_data.volume,
         }
 
         new_file_path = rename_format.format(**valid_rename_options)
@@ -472,257 +487,3 @@ class ComicBook:
             )
 
         return self._tag_scanner_page(xml_dict, scanner_db)
-
-    def _to_none(self, value: str | None) -> str | None:
-        """Returns None if value is UNKNOWN or empty, otherwise returns the value."""
-        if value in ("UNKNOWN", "N", "", None):
-            return None
-        return value
-
-    def _to_int(self, value: str) -> int | None:
-        """Safely converts a string to int, returns None if not possible."""
-        try:
-            return int(value)
-        except (ValueError, TypeError):
-            return None
-
-    def send_to_sqlite(self, conn: sqlite3.Connection) -> None:
-        """
-        Inserts comic book data into SQLite database.
-        Handles series, publisher, issue, pages, and M2M relationships.
-        """
-        x = self.xml_data
-        cursor = conn.cursor()
-
-        try:
-            # 0. Check if this file already exists in the database
-            cursor.execute(
-                "SELECT id FROM issues WHERE file_path = ?",
-                (str(self.current_file_path),),
-            )
-            if cursor.fetchone() is not None:
-                logger.info(
-                    f"Skipping: {self.current_file_name} already exists in database"
-                )
-                return
-
-            logger.info(f"Inserting: {x.series} #{x.issue} vol.{x.volume}")
-
-            # 1. Insert or get series
-            cursor.execute(
-                "INSERT OR IGNORE INTO series (title) VALUES (?)", (x.series,)
-            )
-            cursor.execute("SELECT id FROM series WHERE title = ?", (x.series,))
-            series_id = cursor.fetchone()[0]
-
-            # 2. Insert or get publisher
-            publisher_id = None
-            if x.publisher:
-                cursor.execute(
-                    "INSERT OR IGNORE INTO publishers (name, imprint) VALUES (?, ?)",
-                    (x.publisher, x.imprint),
-                )
-                cursor.execute(
-                    "SELECT id FROM publishers WHERE name = ?", (x.publisher,)
-                )
-                result = cursor.fetchone()
-                publisher_id = result[0] if result else None
-
-            # 3. Check for duplicate by comic identity (series + publisher + issue + volume + format)
-            cursor.execute(
-                """SELECT id FROM issues
-                   WHERE series_id = ? AND publisher_id IS ? AND issue_number = ?
-                   AND volume IS ? AND format IS ?""",
-                (
-                    series_id,
-                    publisher_id,
-                    x.issue,
-                    self._to_int(x.volume),
-                    x.format,
-                ),
-            )
-            is_duplicate = 1 if cursor.fetchone() is not None else 0
-            if is_duplicate:
-                logger.warning(
-                    f"Duplicate detected: {x.series} #{x.issue} vol.{x.volume} "
-                    f"— inserting with is_duplicate=1"
-                )
-
-            # 4. Insert issue
-            cursor.execute(
-                """INSERT INTO issues (
-                    series_id, publisher_id, issue_number, volume, title,
-                    publish_year, publish_month, publish_day, page_count,
-                    age_rating, language_iso, community_rating, web_link,
-                    scan_information, summary, notes, series_group, format,
-                    is_manga, is_black_and_white, main_character_or_team, review,
-                    file_path, file_name, file_extension, file_size_kb, has_scanner_page, is_duplicate
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    series_id,
-                    publisher_id,
-                    x.issue,
-                    self._to_int(x.volume),
-                    x.series,
-                    self._to_int(x.year),
-                    self._to_int(x.month),
-                    self._to_int(x.day),
-                    self._to_int(x.page_count),
-                    x.age_rating,
-                    x.language_iso,
-                    self._parse_float(x.community_rating),
-                    x.web,
-                    x.scan_information,
-                    x.summary,
-                    x.notes,
-                    x.series_group,
-                    x.format,
-                    1 if x.manga == "Yes" else 0,
-                    1 if x.black_and_white == "Yes" else 0,
-                    x.main_character_or_team,
-                    x.review,
-                    str(self.current_file_path),
-                    self.current_file_name,
-                    self.file_extension,
-                    self.file_size,
-                    1 if self.scanner != "NA" else 0,
-                    is_duplicate,
-                ),
-            )
-
-            issue_id = cursor.lastrowid
-
-            # 5. Insert pages
-            for page in self.pages:
-                cursor.execute(
-                    """INSERT INTO pages (
-                        issue_id, page_number, image_width, image_height,
-                        image_size_bytes, page_type, image_hash
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        issue_id,
-                        self._to_int(page.get("Image")),
-                        self._to_int(page.get("ImageWidth")),
-                        self._to_int(page.get("ImageHeight")),
-                        self._to_int(page.get("ImageSize")),
-                        page.get("Type", "Story"),
-                        page.get("ImageHash"),
-                    ),
-                )
-
-            # 6. Insert M2M relationships
-            self._insert_m2m_data(
-                cursor, issue_id, x.writer, "writers", "issue_writers", "writer_id"
-            )
-            self._insert_m2m_data(
-                cursor,
-                issue_id,
-                x.penciller,
-                "pencilers",
-                "issue_pencilers",
-                "penciler_id",
-            )
-            self._insert_m2m_data(
-                cursor, issue_id, x.inker, "inkers", "issue_inkers", "inker_id"
-            )
-            self._insert_m2m_data(
-                cursor,
-                issue_id,
-                x.colourist,
-                "colorists",
-                "issue_colorists",
-                "colorist_id",
-            )
-            self._insert_m2m_data(
-                cursor,
-                issue_id,
-                x.letterer,
-                "letterers",
-                "issue_letterers",
-                "letterer_id",
-            )
-            self._insert_m2m_data(
-                cursor,
-                issue_id,
-                x.cover_artist,
-                "cover_artists",
-                "issue_cover_artists",
-                "cover_artist_id",
-            )
-            self._insert_m2m_data(
-                cursor, issue_id, x.editor, "editors", "issue_editors", "editor_id"
-            )
-            self._insert_m2m_data(
-                cursor,
-                issue_id,
-                x.characters,
-                "characters",
-                "issue_characters",
-                "character_id",
-            )
-            self._insert_m2m_data(
-                cursor,
-                issue_id,
-                x.locations,
-                "locations",
-                "issue_locations",
-                "location_id",
-            )
-            self._insert_m2m_data(
-                cursor, issue_id, x.genre, "genres", "issue_genres", "genre_id"
-            )
-            self._insert_m2m_data(
-                cursor,
-                issue_id,
-                x.teams.split(",") if x.teams else [],
-                "teams",
-                "issue_teams",
-                "team_id",
-            )
-            self._insert_m2m_data(
-                cursor,
-                issue_id,
-                x.story_arc.split(",") if x.story_arc else [],
-                "story_arcs",
-                "issue_story_arcs",
-                "story_arc_id",
-            )
-
-            conn.commit()
-            logger.info(f"Successfully inserted: {x.series} #{x.issue}")
-
-        except Exception as e:
-            logger.error(f"Error inserting comic book to database: {e}")
-            conn.rollback()
-            raise
-        finally:
-            cursor.close()
-
-    def _insert_m2m_data(
-        self,
-        cursor: sqlite3.Cursor,
-        issue_id: int | None,
-        items: list[str],
-        table_name: str,
-        junction_table: str,
-        fk_column: str,
-    ) -> None:
-        """
-        Inserts many-to-many relationships for a list of items.
-        Skips UNKNOWN, empty, and whitespace-only values.
-        """
-        for item in items:
-            item = item.strip()
-            if not item or item in ("UNKNOWN", "N"):
-                continue
-
-            cursor.execute(
-                f"INSERT OR IGNORE INTO {table_name} (name) VALUES (?)", (item,)
-            )
-            cursor.execute(f"SELECT id FROM {table_name} WHERE name = ?", (item,))
-            item_id = cursor.fetchone()[0]
-
-            cursor.execute(
-                f"INSERT OR IGNORE INTO {junction_table} (issue_id, {fk_column}) VALUES (?, ?)",
-                (issue_id, item_id),
-            )

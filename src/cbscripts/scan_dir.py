@@ -5,11 +5,11 @@ from pathlib import Path
 import typer
 
 from cbscripts.comic_class import ComicBook
+from cbscripts.db.utils import create_database
+from cbscripts.to_database import to_db
 from cbscripts.utils import (
     ASSETS_DIR,
     get_comic_files,
-    initialize_database,
-    open_sqlite_connection,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,12 +50,12 @@ def main(
     logger.info(f"Found {counter} comic files")
 
     sql_connection = None
+
     try:
         logger.info(f"Updating database: {update_database}")
         if update_database:
             # its a .database_file here because its a object it self
-            sql_connection = open_sqlite_connection(context.obj.database_file)
-            initialize_database(sql_connection)
+            sql_connection = create_database(context.obj.database_file)
 
         for comic in sorted(comic_files):
             delimiter = context.obj.delimiter if context.obj.delimiter else None
@@ -70,7 +70,7 @@ def main(
             )
 
             if update_database and sql_connection:
-                comicbook.send_to_sqlite(sql_connection)
+                to_db(comicbook, sql_connection)
 
         if ComicBook._no_xmls:
             logger.warning(f"{len(ComicBook._no_xmls)} comic(s) had no ComicInfo.xml:")
@@ -86,10 +86,10 @@ def main(
     except sqlite3.Error as e:
         logger.error(f"Error connecting to database: {e}")
 
-    finally:
-        if sql_connection:
-            sql_connection.close()
-            logger.info("SQLite Connection closed")
+    # finally:
+    # if sql_connection:
+    #   sql_connection.close()
+    #  logger.info("SQLite Connection closed")
 
     logger.info(f"Scanned directory: {directory}")
     logger.info(f"Found {counter} comic files")

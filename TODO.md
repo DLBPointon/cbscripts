@@ -3,3 +3,4 @@
 - Convert PDF to CBZ
 - CBR to CBZ
 - progress bar?
+- Migrate to SQLAlchemy - DONE (28/09/2026)

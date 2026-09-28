@@ -1,5 +1,10 @@
 from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 
-database_path = "sqlite+pysqlite:////home/dlbpointon/Documents/cbscripts/cbscripts.db"
 
-engine = create_engine(database_path, echo=True)
+def get_engine(database_path: str) -> Engine:
+    print(database_path)
+    return create_engine(
+        f"sqlite+pysqlite:///{database_path}",
+        echo=True,
+    )
