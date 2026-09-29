@@ -40,7 +40,7 @@ class Publisher(Base):
     __tablename__ = "publishers"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str]
+    name: Mapped[str] = mapped_column(unique=True, nullable=False)
     imprint: Mapped[str]
 
     issues: Mapped[list["Issues"]] = relationship(
@@ -200,7 +200,7 @@ class Page(Base):
     height: Mapped[int]
     path: Mapped[str]
     size: Mapped[int]
-    hash: Mapped[str]
+    hash: Mapped[str] = mapped_column(nullable=True)
     type: Mapped[str]
 
     issue: Mapped["Issues"] = relationship(

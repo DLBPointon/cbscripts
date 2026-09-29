@@ -1,10 +1,14 @@
 {
-  "0818182c3c187e7e": {
-    "scanner": "Mephisto",
-    "asset_path": "scanner/mephisto.jpg"
-  },
   "ffefe7c3c7c3d3ff": {
-    "scanner": "Phantom_Zone",
-    "asset_path": "scanner/phantom_zone.jpg"
+    "scanner": "phantom_zone",
+    "path": "assets/scanner_images/phantom_zone.jpg"
+  },
+  "0818182c3c187e7e": {
+    "scanner": "mephisto",
+    "path": "assets/scanner_images/mephisto.jpg"
+  },
+  "0000ffefefef0000": {
+    "scanner": "the_last_kryptonian",
+    "path": "assets/scanner_images/the_last_kryptonian.jpg"
   }
 }

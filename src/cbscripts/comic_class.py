@@ -29,7 +29,6 @@ def _hash_page(args: tuple[str, bytes]) -> tuple[str, str]:
     thread = threading.current_thread().name
     logger.debug(f"[{thread}] Starting hash: {page_path}")
     result = str(imagehash.average_hash(Image.open(io.BytesIO(data))))
-    logger.debug(f"[{thread}] Done:          {page_path}")
     return page_path, result
 
 
@@ -98,7 +97,7 @@ class ComicBook:
                         width=page.get("ImageWidth", 0),
                         size=page["ImageSize"],
                         path=page["FilePath"],
-                        hash=page["ImageHash"],
+                        hash=str(page["ImageHash"]),
                         type=page.get("Type", "NA"),
                     )
                     for page in page_list

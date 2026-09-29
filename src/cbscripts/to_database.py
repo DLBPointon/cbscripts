@@ -21,7 +21,31 @@ from cbscripts.db.models import (
 logger = logging.getLogger(__name__)
 
 
+def get_publisher_data(session: Session, comic: ComicBook) -> Publisher:
+    """
+    Organising the publisher data from the db and comicbook to make sure
+    we don't have duplicate publishers in the db.
+    """
+    publisher_data = session.scalar(
+        # Select the Publisher table and check values for existence
+        sa.select(Publisher).where(Publisher.name == comic.xml_data.publisher)
+    )
+
+    if publisher_data is None:
+        # If the publisher doesn't exist, create a new entry
+        publisher_data = Publisher(
+            name=comic.xml_data.publisher,
+            imprint=comic.xml_data.imprint,
+        )
+
+    return publisher_data
+
+
 def get_people(comic: ComicBook) -> list[People]:
+    """
+    Extracting the people data from the comicbook and converting it into
+    a list of People objects.
+    """
     people_dict = {
         "editor": comic.xml_data.editor,
         "writer": comic.xml_data.writer,
@@ -65,10 +89,7 @@ def to_db(comic: ComicBook, db_session: sa.Engine) -> None:
             comic_data = Comic(title=comic.xml_data.series)
             session.add(comic_data)
 
-        publisher_data = Publisher(
-            name=comic.xml_data.publisher,
-            imprint=comic.xml_data.imprint,
-        )
+        publisher_data = get_publisher_data(session, comic)
 
         team_data = Team(name=comic.xml_data.teams) if comic.xml_data.teams else None
 

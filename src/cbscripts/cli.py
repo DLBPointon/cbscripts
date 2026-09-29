@@ -8,6 +8,7 @@ import typer
 import yaml
 from rich.logging import RichHandler
 
+from cbscripts.rehash_scanners import main as rehash_scanners
 from cbscripts.scan_dir import main as scan_dir
 from cbscripts.sort_cb import main as sort_comics
 
@@ -133,6 +134,19 @@ def sort(
     Rename comics in a given directory.
     """
     sort_comics(context, directory, dry_run, scan_subs, output_directory)
+
+
+@app.command()
+def rehash(
+    context: typer.Context,
+    scanner_directory: Path,
+    terminal: bool = False,
+    replace_default: bool = False,
+):
+    """
+    Rehash the scanner files in the given directory and output the results to the specified file.
+    """
+    rehash_scanners(context, scanner_directory, terminal, replace_default)
 
 
 if __name__ == "__main__":
