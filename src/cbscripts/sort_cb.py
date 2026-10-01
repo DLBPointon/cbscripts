@@ -1,6 +1,21 @@
-from pathlib import Path
+def connect_to_db():
+    """
+    Connects to the database and query for Comics where
+    the current path does not match the proposed path.
+    """
 
-from cbscripts.utils import get_comic_files
+
+def move_that_thang():
+    """
+    Moves the comic book file to the proposed path.
+    """
+
+
+def update_db():
+    """
+    Once successfully moved, updates the database fields so that
+    the current path matches the proposed path.
+    """
 
 
 def main(
@@ -21,5 +36,8 @@ def main(
         else moves files into new directory structure
     """
 
-    path = Path(input_path)
-    _comic_files, _counter = get_comic_files(path, subdirectory_search)
+    connect_to_db()
+
+    move_that_thang()
+
+    update_db()  # that current_path = proposed_path

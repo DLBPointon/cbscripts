@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import ForeignKey
+from sqlalchemy import ForeignKey, and_, func, select
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -26,6 +27,41 @@ class Comic(Base):
         back_populates="series",
         cascade="all, delete-orphan",
     )
+
+    # Hybrid property for counting ready-to-move issues
+    # This is a Python way of getting a number for Comic
+    @hybrid_property
+    def ready_to_move_py(self) -> int:
+        """Count of associated IssueData records where path != new_path"""
+        return sum(
+            1
+            for issue in self.issues
+            for data in issue.issue_data
+            if data.path != data.new_path
+        )
+
+    # Hybrid property for counting ready-to-move issues
+    # This is an SQL way of doing the same this as above
+    # It also uses the above as the base for the expression
+    # Should be able to use it like:
+    # session.query(Comic).filter(Comic.ready_to_move > 0).all()
+    @ready_to_move_py.expression
+    @classmethod
+    def ready_to_move(cls):
+        """SQL expression for querying comics by ready_to_move count"""
+        return (
+            select(func.count(1))
+            .select_from(Issues)
+            .join(IssueData)
+            .where(
+                and_(
+                    Issues.series_id == cls.id,
+                    IssueData.path != IssueData.new_path,
+                )
+            )
+            .correlate(cls)
+            .scalar_subquery()
+        )
 
     def __repr__(self) -> str:
         return f"Comic(id={self.id!r}, title={self.title!r})"
