@@ -31,6 +31,24 @@ class Comic(Base):
         return f"Comic(id={self.id!r}, title={self.title!r})"
 
 
+# This will need to be searched based on the series name
+# And then filtered on the year
+# Similarity score might need to be a thing too.
+# ---
+# Can we do something with the issue.web link?
+# - can we get the series information if we only have the issue.web link?
+# - this would mean we can rely on that, hoping that issue.id == 1 is always correct
+# - This would also mean that we expect all issues going into cbscripts to have already
+# - gone through comictagger
+# class ComicVine(Base):
+#     __tablename__ = "comic_vine"
+#
+#     id: Mapped[int] = mapped_column(primary_key=True, foreign_key=foreign(Comic.id))
+#     req_sent: Mapped[bool] = mapped_column(default=False)
+#     updated: Mapped[datetime] = mapped_column(default=datetime.now)
+#     count_of_episodes: Mapped[int] = mapped_column(default=0)
+
+
 # ---------------------------------------------------------------------------
 # Publisher
 # ---------------------------------------------------------------------------
